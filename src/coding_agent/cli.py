@@ -65,6 +65,7 @@ def process_response(llm_client: LLMClient, conversation: ConversationManager) -
     """Process LLM response and execute tools if needed."""
     full_response = ""
     for delta in llm_client.send_message_stream(conversation.get_messages()):
+        click.echo(click.style("▸ ", fg="green", bold=True), nl=False)
         click.echo(delta, nl=False)
         full_response += delta
     click.echo("")
@@ -132,7 +133,7 @@ def main(model: str | None, api_base: str | None) -> None:
 
     while True:
         try:
-            text = session.prompt("you> ")
+            text = session.prompt(click.style("➜ ", fg="blue", bold=True))
         except KeyboardInterrupt:
             click.echo("\nUse Ctrl+D or type 'exit' to quit.")
             continue
