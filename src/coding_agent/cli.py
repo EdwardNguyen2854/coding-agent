@@ -3,6 +3,7 @@
 import sys
 
 import click
+import litellm
 from prompt_toolkit import PromptSession
 
 from coding_agent.config import ConfigError, apply_cli_overrides, load_config
@@ -41,6 +42,10 @@ DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 def main(model: str | None, api_base: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
     print_banner()
+
+    import logging
+    logging.getLogger("litellm").setLevel(logging.WARNING)
+    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 
     try:
         config = load_config()
@@ -89,14 +94,12 @@ def main(model: str | None, api_base: str | None) -> None:
 
         has_output = False
         try:
+            full_response = ""
             for delta in llm_client.send_message_stream(conversation.get_messages()):
                 click.echo(delta, nl=False)
                 has_output = True
+                full_response += delta
             click.echo("")
-            full_response = ""
-            if llm_client.last_response is not None:
-                full_response = llm_client.last_response.choices[0].message.content
-            renderer.render_streaming_markdown(full_response)
             conversation.add_message("assistant", full_response)
         except ConnectionError as e:
             if has_output:
