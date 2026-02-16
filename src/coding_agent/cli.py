@@ -18,12 +18,14 @@ from coding_agent.tools import execute_tool
 import litellm
 litellm.suppress_debug_info = True
 
+__version__ = "0.1.1"
+
 
 def print_banner() -> None:
     """Print the EMN Coding Agent banner."""
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
     
-    banner = """
+    banner = f"""
 ███████╗███╗   ███╗███╗   ██╗
 ██╔════╝████╗ ████║████╗  ██║
 █████╗  ██╔████╔██║██╔██╗ ██║
@@ -37,6 +39,7 @@ def print_banner() -> None:
  ██║     ██║   ██║██║  ██║██║██║╚██╗██║██║   ██║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
  ╚██████╗╚██████╔╝██████╔╝██║██║ ╚████║╚██████╔╝     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
  ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
+                                                        v{__version__}
 """
     click.echo(click.style(banner, fg="cyan", bold=True))
 
