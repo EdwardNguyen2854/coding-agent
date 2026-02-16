@@ -2,8 +2,6 @@
 
 import os
 
-os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
-
 import sys
 
 import click
@@ -14,6 +12,9 @@ from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
 from coding_agent.renderer import Renderer
 from coding_agent.system_prompt import SYSTEM_PROMPT
+
+import litellm
+litellm.suppress_debug_info = True
 
 
 def print_banner() -> None:
