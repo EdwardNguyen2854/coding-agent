@@ -1,6 +1,7 @@
 """Coding-Agent CLI entry point."""
 
 import os
+import re
 
 import sys
 
@@ -12,6 +13,7 @@ from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
 from coding_agent.renderer import Renderer
 from coding_agent.system_prompt import SYSTEM_PROMPT
+from coding_agent.tools import execute_tool
 
 import litellm
 litellm.suppress_debug_info = True
@@ -19,7 +21,6 @@ litellm.suppress_debug_info = True
 
 def print_banner() -> None:
     """Print the EMN Coding Agent banner."""
-    import os
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
     
     banner = """
@@ -35,9 +36,57 @@ def print_banner() -> None:
  ██║     ██║   ██║██║  ██║██║██╔██╗ ██║██║  ███╗     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
  ██║     ██║   ██║██║  ██║██║██║╚██╗██║██║   ██║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
  ╚██████╗╚██████╔╝██████╔╝██║██║ ╚████║╚██████╔╝     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
-  ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
+ ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
 """
     click.echo(click.style(banner, fg="cyan", bold=True))
+
+
+def parse_tool_calls(response: str) -> list[dict]:
+    """Parse tool calls from LLM response XML format."""
+    tool_calls = []
+    pattern = r"<tool_call>\s*<function=(\w+)>(.*?)</tool_call>"
+    matches = re.findall(pattern, response, re.DOTALL)
+    
+    for func_name, params_str in matches:
+        params = {}
+        param_pattern = r"<(\w+)>(.*?)</\1>"
+        param_matches = re.findall(param_pattern, params_str)
+        for key, value in param_matches:
+            params[key] = value.strip()
+        tool_calls.append({"name": func_name, "params": params})
+    
+    return tool_calls
+
+
+def process_response(llm_client: LLMClient, conversation: ConversationManager) -> None:
+    """Process LLM response and execute tools if needed."""
+    full_response = ""
+    for delta in llm_client.send_message_stream(conversation.get_messages()):
+        click.echo(delta, nl=False)
+        full_response += delta
+    click.echo("")
+    
+    tool_calls = parse_tool_calls(full_response)
+    
+    if tool_calls:
+        for tool_call in tool_calls:
+            tool_name = tool_call["name"]
+            tool_params = tool_call["params"]
+            click.echo(click.style(f"\n→ Running {tool_name}...", fg="yellow"))
+            result = execute_tool(tool_name, tool_params)
+            
+            if result.is_error:
+                click.echo(click.style(f"Error: {result.error}", fg="red"))
+                conversation.add_message("tool", f"Error: {result.error}")
+            else:
+                output_preview = result.output[:100] + "..." if len(result.output) > 100 else result.output
+                click.echo(click.style(f"✓ {tool_name}: {output_preview}", fg="green"))
+                conversation.add_message("tool", result.output)
+        
+        click.echo(click.style("\n→ Continuing...\n", fg="cyan"))
+        process_response(llm_client, conversation)
+    else:
+        conversation.add_message("assistant", full_response)
 
 
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
@@ -95,16 +144,7 @@ def main(model: str | None, api_base: str | None) -> None:
 
         conversation.add_message("user", text)
 
-        has_output = False
         try:
-            full_response = ""
-            for delta in llm_client.send_message_stream(conversation.get_messages()):
-                click.echo(delta, nl=False)
-                has_output = True
-                full_response += delta
-            click.echo("")
-            conversation.add_message("assistant", full_response)
+            process_response(llm_client, conversation)
         except ConnectionError as e:
-            if has_output:
-                renderer.print_error("[streaming interrupted]")
             renderer.print_error(str(e))
