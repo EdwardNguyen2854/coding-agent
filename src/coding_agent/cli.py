@@ -11,7 +11,26 @@ from coding_agent.llm import LLMClient
 from coding_agent.renderer import Renderer
 from coding_agent.system_prompt import SYSTEM_PROMPT
 
-from coding_agent.system_prompt import SYSTEM_PROMPT
+
+def print_banner() -> None:
+    """Print the EMN Coding Agent banner."""
+    banner = """
+███████╗███╗   ███╗███╗   ██╗
+██╔════╝████╗ ████║████╗  ██║
+█████╗  ██╔████╔██║██╔██╗ ██║
+██╔══╝  ██║╚██╔╝██║██║╚██╗██║
+███████╗██║ ╚═╝ ██║██║ ╚████║
+╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝
+
+  ██████╗ ██████╗ ██████╗ ██╗███╗   ██╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+ ██╔════╝██╔═══██╗██╔══██╗██║████╗  ██║██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+ ██║     ██║   ██║██║  ██║██║██╔██╗ ██║██║  ███╗     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
+ ██║     ██║   ██║██║  ██║██║██║╚██╗██║██║   ██║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
+ ╚██████╗╚██████╔╝██████╔╝██║██║ ╚████║╚██████╔╝     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
+  ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
+"""
+    click.echo(click.style(banner, fg="cyan", bold=True))
+
 
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 
@@ -21,6 +40,8 @@ DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 @click.option("--api-base", default=None, help="Override LiteLLM API base URL")
 def main(model: str | None, api_base: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
+    print_banner()
+
     try:
         config = load_config()
         config = apply_cli_overrides(config, model=model, api_base=api_base)
@@ -28,7 +49,9 @@ def main(model: str | None, api_base: str | None) -> None:
         click.echo(str(e), err=True)
         sys.exit(1)
 
-    click.echo(f"Loaded config: model={config.model}, api_base={config.api_base}")
+    click.echo(f"Model: {config.model}")
+    click.echo(f"API:   {config.api_base}")
+    click.echo("")
 
     try:
         llm_client = LLMClient(config)
@@ -38,7 +61,9 @@ def main(model: str | None, api_base: str | None) -> None:
         sys.exit(1)
 
     renderer = Renderer()
-    renderer.print_info(f"Connected to LiteLLM at {config.api_base}")
+    renderer.print_info(f"Connected to LiteLLM")
+
+    click.echo(click.style("Type 'exit' to quit.\n", fg="green"))
 
     conversation = ConversationManager(DEFAULT_SYSTEM_PROMPT)
     session = PromptSession()
