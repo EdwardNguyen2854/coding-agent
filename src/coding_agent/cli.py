@@ -19,7 +19,7 @@ from coding_agent.tools import execute_tool
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 USER_PROMPT = "You   > "
 ASSISTANT_PREFIX = "Agent > "
@@ -92,11 +92,12 @@ def parse_tool_calls(response: str) -> list[dict]:
 def process_response(llm_client: LLMClient, conversation: ConversationManager) -> None:
     """Process LLM response and execute tools if needed."""
     full_response = ""
-    click.echo(ASSISTANT_PREFIX, nl=False)
     for delta in llm_client.send_message_stream(conversation.get_messages()):
-        click.echo(delta, nl=False)
         full_response += delta
-    click.echo("")
+
+    display_response = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", full_response).strip()
+    if display_response:
+        click.echo(f"{ASSISTANT_PREFIX}{display_response}")
     
     tool_calls = parse_tool_calls(full_response)
     
