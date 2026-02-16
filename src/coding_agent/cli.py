@@ -19,7 +19,10 @@ from coding_agent.tools import execute_tool
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
+
+USER_PROMPT = "You   > "
+ASSISTANT_PREFIX = "Agent > "
 
 
 def print_banner() -> None:
@@ -49,20 +52,22 @@ v{__version__}
 def parse_tool_calls(response: str) -> list[dict]:
     """Parse tool calls from LLM response - supports both XML and JSON format."""
     tool_calls = []
-    
-    # Try XML format first - with flexible whitespace
-    pattern = r"<tool_call>\s*<function=(\w+)>(.*?)</tool_call>"
-    matches = re.findall(pattern, response, re.DOTALL)
-    
-    for func_name, params_str in matches:
-        params = {}
-        # Handle both <param>value</param> and <param=value> patterns
-        param_pattern = r"<(\w+)(?:\s*=\s*\w+)?>(.*?)</\1>"
-        param_matches = re.findall(param_pattern, params_str)
-        for key, value in param_matches:
+    xml_pattern = r"<tool_call>\s*<function=([\w.-]+)>(.*?)</function>\s*</tool_call>"
+    xml_matches = re.findall(xml_pattern, response, re.DOTALL)
+
+    for func_name, body in xml_matches:
+        params: dict[str, str] = {}
+
+        named_params = re.findall(r"<parameter=(\w+)>\s*(.*?)\s*</parameter>", body, re.DOTALL)
+        for key, value in named_params:
             params[key] = value.strip()
-        if params:
-            tool_calls.append({"name": func_name, "params": params, "id": f"call_{len(tool_calls)}"})
+
+        generic_params = re.findall(r"<(\w+)>\s*(.*?)\s*</\1>", body, re.DOTALL)
+        for key, value in generic_params:
+            if key not in params:
+                params[key] = value.strip()
+
+        tool_calls.append({"name": func_name, "params": params, "id": f"call_{len(tool_calls)}"})
     
     # Try JSON format
     if not tool_calls:
@@ -74,6 +79,8 @@ def parse_tool_calls(response: str) -> list[dict]:
                 tool_data = json.loads(json_str)
                 tool_name = tool_data.get("tool") or tool_data.get("function", {}).get("name", "")
                 tool_params = tool_data.get("parameters") or tool_data.get("function", {}).get("arguments", {})
+                if isinstance(tool_params, str):
+                    tool_params = json.loads(tool_params)
                 if tool_name and tool_params:
                     tool_calls.append({"name": tool_name, "params": tool_params, "id": f"call_{len(tool_calls)}"})
             except json.JSONDecodeError:
@@ -85,14 +92,11 @@ def parse_tool_calls(response: str) -> list[dict]:
 def process_response(llm_client: LLMClient, conversation: ConversationManager) -> None:
     """Process LLM response and execute tools if needed."""
     full_response = ""
+    click.echo(ASSISTANT_PREFIX, nl=False)
     for delta in llm_client.send_message_stream(conversation.get_messages()):
         click.echo(delta, nl=False)
         full_response += delta
-    
-    # Clean up response - remove tool call XML from display but keep for parsing
-    display_response = re.sub(r"<tool_call>.*?</tool_call>", "", full_response, flags=re.DOTALL).strip()
-    if display_response:
-        click.echo("")
+    click.echo("")
     
     tool_calls = parse_tool_calls(full_response)
     
@@ -102,22 +106,20 @@ def process_response(llm_client: LLMClient, conversation: ConversationManager) -
             tool_params = tool_call["params"]
             tool_id = tool_call.get("id", "call_0")
             
-            click.echo(click.style(f"┌─ Tool: {tool_name}", fg="cyan", bold=True))
+            click.echo(f"[tool] {tool_name}")
             for k, v in tool_params.items():
-                click.echo(click.style(f"│ ", fg="cyan") + click.style(f"{k}: ", fg="white", bold=True) + str(v)[:80])
-            click.echo(click.style("└─ Running...", fg="cyan"))
+                click.echo(f"  - {k}: {str(v)[:80]}")
+            click.echo("  running...")
             
             result = execute_tool(tool_name, tool_params)
             
             if result.is_error:
-                click.echo(click.style(f"✗ Error: {result.error}", fg="red", bold=True))
+                click.echo(f"  error: {result.error}")
                 conversation.add_message("tool", f"Error: {result.error}", tool_call_id=tool_id)
             else:
-                output_preview = result.output[:100] + "..." if len(result.output) > 100 else result.output
-                click.echo(click.style(f"✓ Done", fg="green", bold=True))
+                click.echo("  done")
                 conversation.add_message("tool", result.output, tool_call_id=tool_id)
-        
-        click.echo(click.style("─" * 40, fg="dim"))
+        click.echo("-" * 40)
         process_response(llm_client, conversation)
     else:
         conversation.add_message("assistant", full_response)
@@ -161,7 +163,7 @@ def main(model: str | None, api_base: str | None) -> None:
 
     while True:
         try:
-            text = session.prompt(click.style("➜ ", fg="blue", bold=True))
+            text = session.prompt(USER_PROMPT)
         except KeyboardInterrupt:
             click.echo("\nUse Ctrl+D or type 'exit' to quit.")
             continue
