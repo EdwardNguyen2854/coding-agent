@@ -2,6 +2,7 @@
 
 import os
 import re
+import json
 
 import sys
 
@@ -33,20 +34,23 @@ def print_banner() -> None:
 ███████╗██║ ╚═╝ ██║██║ ╚████║
 ╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝
 
-  ██████╗ ██████╗ ██████╗ ██╗███╗   ██╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
- ██╔════╝██╔═══██╗██╔══██╗██║████╗  ██║██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
- ██║     ██║   ██║██║  ██║██║██╔██╗ ██║██║  ███╗     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
- ██║     ██║   ██║██║  ██║██║██║╚██╗██║██║   ██║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
- ╚██████╗╚██████╔╝██████╔╝██║██║ ╚████║╚██████╔╝     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
+ ██████╗ ██████╗ ██████╗ ██╗███╗   ██╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
+██╔════╝██╔═══██╗██╔══██╗██║████╗  ██║██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
+██║     ██║   ██║██║  ██║██║██╔██╗ ██║██║  ███╗     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
+██║     ██║   ██║██║  ██║██║██║╚██╗██║██║   ██║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
+ ██████╗╚██████╔╝██████╔╝██║██║ ╚████║╚██████╔╝     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
  ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
-                                                        v{__version__}
+
+v{__version__}
 """
     click.echo(click.style(banner, fg="cyan", bold=True))
 
 
 def parse_tool_calls(response: str) -> list[dict]:
-    """Parse tool calls from LLM response XML format."""
+    """Parse tool calls from LLM response - supports both XML and JSON format."""
     tool_calls = []
+    
+    # Try XML format first
     pattern = r"<tool_call>\s*<function=(\w+)>(.*?)</tool_call>"
     matches = re.findall(pattern, response, re.DOTALL)
     
@@ -57,6 +61,32 @@ def parse_tool_calls(response: str) -> list[dict]:
         for key, value in param_matches:
             params[key] = value.strip()
         tool_calls.append({"name": func_name, "params": params, "id": f"call_{len(tool_calls)}"})
+    
+    # Try JSON format
+    if not tool_calls:
+        json_pattern = r'```json\s*(\{[\s\S]*?\})\s*```'
+        json_matches = re.findall(json_pattern, response)
+        
+        for json_str in json_matches:
+            try:
+                tool_data = json.loads(json_str)
+                tool_name = tool_data.get("tool") or tool_data.get("function", {}).get("name", "")
+                tool_params = tool_data.get("parameters") or tool_data.get("function", {}).get("arguments", {})
+                if tool_name and tool_params:
+                    tool_calls.append({"name": tool_name, "params": tool_params, "id": f"call_{len(tool_calls)}"})
+            except json.JSONDecodeError:
+                pass
+        
+        # Try inline JSON
+        if not tool_calls:
+            inline_pattern = r'\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*(\{[^}]+\})\s*\}'
+            inline_matches = re.findall(inline_pattern, response)
+            for tool_name, params_str in inline_matches:
+                try:
+                    tool_params = json.loads(f"{{{params_str}}}")
+                    tool_calls.append({"name": tool_name, "params": tool_params, "id": f"call_{len(tool_calls)}"})
+                except json.JSONDecodeError:
+                    pass
     
     return tool_calls
 
