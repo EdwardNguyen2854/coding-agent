@@ -50,17 +50,19 @@ def parse_tool_calls(response: str) -> list[dict]:
     """Parse tool calls from LLM response - supports both XML and JSON format."""
     tool_calls = []
     
-    # Try XML format first
+    # Try XML format first - with flexible whitespace
     pattern = r"<tool_call>\s*<function=(\w+)>(.*?)</tool_call>"
     matches = re.findall(pattern, response, re.DOTALL)
     
     for func_name, params_str in matches:
         params = {}
-        param_pattern = r"<(\w+)>(.*?)</\1>"
+        # Handle both <param>value</param> and <param=value> patterns
+        param_pattern = r"<(\w+)(?:\s*=\s*\w+)?>(.*?)</\1>"
         param_matches = re.findall(param_pattern, params_str)
         for key, value in param_matches:
             params[key] = value.strip()
-        tool_calls.append({"name": func_name, "params": params, "id": f"call_{len(tool_calls)}"})
+        if params:
+            tool_calls.append({"name": func_name, "params": params, "id": f"call_{len(tool_calls)}"})
     
     # Try JSON format
     if not tool_calls:
@@ -76,17 +78,6 @@ def parse_tool_calls(response: str) -> list[dict]:
                     tool_calls.append({"name": tool_name, "params": tool_params, "id": f"call_{len(tool_calls)}"})
             except json.JSONDecodeError:
                 pass
-        
-        # Try inline JSON
-        if not tool_calls:
-            inline_pattern = r'\{\s*"tool"\s*:\s*"(\w+)"\s*,\s*"parameters"\s*:\s*(\{[^}]+\})\s*\}'
-            inline_matches = re.findall(inline_pattern, response)
-            for tool_name, params_str in inline_matches:
-                try:
-                    tool_params = json.loads(f"{{{params_str}}}")
-                    tool_calls.append({"name": tool_name, "params": tool_params, "id": f"call_{len(tool_calls)}"})
-                except json.JSONDecodeError:
-                    pass
     
     return tool_calls
 
@@ -95,10 +86,13 @@ def process_response(llm_client: LLMClient, conversation: ConversationManager) -
     """Process LLM response and execute tools if needed."""
     full_response = ""
     for delta in llm_client.send_message_stream(conversation.get_messages()):
-        click.echo(click.style("▸ ", fg="green", bold=True), nl=False)
         click.echo(delta, nl=False)
         full_response += delta
-    click.echo("")
+    
+    # Clean up response - remove tool call XML from display but keep for parsing
+    display_response = re.sub(r"<tool_call>.*?</tool_call>", "", full_response, flags=re.DOTALL).strip()
+    if display_response:
+        click.echo("")
     
     tool_calls = parse_tool_calls(full_response)
     
@@ -108,18 +102,22 @@ def process_response(llm_client: LLMClient, conversation: ConversationManager) -
             tool_params = tool_call["params"]
             tool_id = tool_call.get("id", "call_0")
             
-            click.echo(click.style(f"\n→ Running {tool_name}...", fg="yellow"))
+            click.echo(click.style(f"┌─ Tool: {tool_name}", fg="cyan", bold=True))
+            for k, v in tool_params.items():
+                click.echo(click.style(f"│ ", fg="cyan") + click.style(f"{k}: ", fg="white", bold=True) + str(v)[:80])
+            click.echo(click.style("└─ Running...", fg="cyan"))
+            
             result = execute_tool(tool_name, tool_params)
             
             if result.is_error:
-                click.echo(click.style(f"Error: {result.error}", fg="red"))
+                click.echo(click.style(f"✗ Error: {result.error}", fg="red", bold=True))
                 conversation.add_message("tool", f"Error: {result.error}", tool_call_id=tool_id)
             else:
                 output_preview = result.output[:100] + "..." if len(result.output) > 100 else result.output
-                click.echo(click.style(f"✓ {tool_name}: {output_preview}", fg="green"))
+                click.echo(click.style(f"✓ Done", fg="green", bold=True))
                 conversation.add_message("tool", result.output, tool_call_id=tool_id)
         
-        click.echo(click.style("\n→ Continuing...\n", fg="cyan"))
+        click.echo(click.style("─" * 40, fg="dim"))
         process_response(llm_client, conversation)
     else:
         conversation.add_message("assistant", full_response)
