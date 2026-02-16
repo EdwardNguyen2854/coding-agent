@@ -1,9 +1,12 @@
 """Coding-Agent CLI entry point."""
 
+import os
+
+os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
+
 import sys
 
 import click
-import litellm
 from prompt_toolkit import PromptSession
 
 from coding_agent.config import ConfigError, apply_cli_overrides, load_config
@@ -15,6 +18,9 @@ from coding_agent.system_prompt import SYSTEM_PROMPT
 
 def print_banner() -> None:
     """Print the EMN Coding Agent banner."""
+    import os
+    os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
+    
     banner = """
 ███████╗███╗   ███╗███╗   ██╗
 ██╔════╝████╗ ████║████╗  ██║
@@ -42,10 +48,6 @@ DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
 def main(model: str | None, api_base: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
     print_banner()
-
-    import logging
-    logging.getLogger("litellm").setLevel(logging.WARNING)
-    logging.getLogger("LiteLLM").setLevel(logging.WARNING)
 
     try:
         config = load_config()
