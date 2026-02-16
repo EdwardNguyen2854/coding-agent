@@ -19,7 +19,7 @@ from coding_agent.tools import execute_tool
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 
 def print_banner() -> None:
