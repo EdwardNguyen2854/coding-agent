@@ -1,0 +1,209 @@
+"""Tests for permission system."""
+
+import pytest
+from unittest.mock import MagicMock, patch
+
+from coding_agent.permissions import PermissionSystem, TOOLS_REQUIRING_APPROVAL
+
+
+class TestPermissionSystemInit:
+    """Test permission system initialization."""
+
+    def test_init_with_renderer(self):
+        """Test initialization with renderer."""
+        renderer = MagicMock()
+        ps = PermissionSystem(renderer)
+        assert ps.renderer is renderer
+        assert ps.approved_operations == {}
+
+    def test_init_without_renderer(self):
+        """Test initialization without renderer."""
+        ps = PermissionSystem()
+        assert ps.renderer is None
+        assert ps.approved_operations == {}
+
+
+class TestToolsRequiringApproval:
+    """Test which tools require approval."""
+
+    def test_approval_required_for_write(self):
+        """Test file_write requires approval."""
+        assert "file_write" in TOOLS_REQUIRING_APPROVAL
+
+    def test_approval_required_for_edit(self):
+        """Test file_edit requires approval."""
+        assert "file_edit" in TOOLS_REQUIRING_APPROVAL
+
+    def test_approval_required_for_shell(self):
+        """Test shell requires approval."""
+        assert "shell" in TOOLS_REQUIRING_APPROVAL
+
+    def test_no_approval_for_read(self):
+        """Test file_read does not require approval."""
+        assert "file_read" not in TOOLS_REQUIRING_APPROVAL
+
+    def test_no_approval_for_glob(self):
+        """Test glob does not require approval."""
+        assert "glob" not in TOOLS_REQUIRING_APPROVAL
+
+    def test_no_approval_for_grep(self):
+        """Test grep does not require approval."""
+        assert "grep" not in TOOLS_REQUIRING_APPROVAL
+
+
+class TestCheckApproval:
+    """Test check_approval method."""
+
+    def test_auto_approve_safe_tools(self):
+        """Test safe tools are auto-approved."""
+        ps = PermissionSystem()
+        result = ps.check_approval("file_read", {"path": "/some/file"})
+        assert result is True
+
+    def test_approval_required_for_write(self):
+        """Test file_write triggers approval check."""
+        ps = PermissionSystem()
+        with patch.object(ps, "_prompt_user", return_value=True) as mock_prompt:
+            result = ps.check_approval("file_write", {"path": "/some/file"})
+            mock_prompt.assert_called_once()
+            assert result is True
+
+    def test_approval_required_for_edit(self):
+        """Test file_edit triggers approval check."""
+        ps = PermissionSystem()
+        with patch.object(ps, "_prompt_user", return_value=True) as mock_prompt:
+            result = ps.check_approval("file_edit", {"path": "/some/file"})
+            mock_prompt.assert_called_once()
+            assert result is True
+
+    def test_approval_required_for_shell(self):
+        """Test shell triggers approval check."""
+        ps = PermissionSystem()
+        with patch.object(ps, "_prompt_user", return_value=True) as mock_prompt:
+            result = ps.check_approval("shell", {"command": "echo hello"})
+            mock_prompt.assert_called_once()
+            assert result is True
+
+
+class TestDestructiveCommandDetection:
+    """Test destructive command detection."""
+
+    def test_detect_rm_rf(self):
+        """Test rm -rf detection."""
+        ps = PermissionSystem()
+        assert ps._is_destructive("rm -rf /tmp") is True
+
+    def test_detect_rm_r_recursive(self):
+        """Test rm -r recursive detection."""
+        ps = PermissionSystem()
+        assert ps._is_destructive("rm -r /home") is True
+
+    def test_detect_del_recursive(self):
+        """Test del /s /q detection (Windows)."""
+        ps = PermissionSystem()
+        assert ps._is_destructive("del /s /q C:\\Windows") is True
+
+    def test_detect_format(self):
+        """Test format command detection."""
+        ps = PermissionSystem()
+        assert ps._is_destructive("format D:") is True
+
+    def test_detect_mkfs(self):
+        """Test mkfs detection."""
+        ps = PermissionSystem()
+        assert ps._is_destructive("mkfs /dev/sda1") is True
+
+    def test_detect_shred(self):
+        """Test shred detection."""
+        ps = PermissionSystem()
+        assert ps._is_destructive("shred -u /tmp/file") is True
+
+    def test_safe_command_not_destructive(self):
+        """Test safe commands are not flagged as destructive."""
+        ps = PermissionSystem()
+        assert ps._is_destructive("echo hello") is False
+        assert ps._is_destructive("ls -la") is False
+        assert ps._is_destructive("pwd") is False
+        assert ps._is_destructive("cat file.txt") is False
+
+
+class TestDestructiveShellApproval:
+    """Test approval for destructive shell commands."""
+
+    def test_destructive_command_prompts_with_warning(self):
+        """Test destructive shell commands show warning."""
+        ps = PermissionSystem()
+        with patch.object(ps, "_prompt_with_warning", return_value=True) as mock_warning:
+            result = ps.check_approval("shell", {"command": "rm -rf /tmp"})
+            mock_warning.assert_called_once()
+            assert result is True
+
+    def test_safe_shell_no_warning(self):
+        """Test safe shell commands don't show warning."""
+        ps = PermissionSystem()
+        with patch.object(ps, "_prompt_with_warning") as mock_warning:
+            with patch.object(ps, "_prompt_user", return_value=True) as mock_prompt:
+                result = ps.check_approval("shell", {"command": "echo hello"})
+                mock_warning.assert_not_called()
+                mock_prompt.assert_called_once()
+
+
+class TestSessionMemory:
+    """Test session approval memory."""
+
+    def test_approve_stores_operation(self):
+        """Test approve stores operation in memory."""
+        ps = PermissionSystem()
+        ps.approve("file_write", {"path": "/tmp/test.txt"})
+        keys = list(ps.approved_operations.keys())
+        assert any("file_write" in key for key in keys)
+
+    def test_clears_operations(self):
+        """Test clear removes all stored approvals."""
+        ps = PermissionSystem()
+        ps.approve("file_write", {"path": "/tmp/test.txt"})
+        ps.clear()
+        assert ps.approved_operations == {}
+
+    def test_auto_approve_remembered_operation(self):
+        """Test previously approved operation is auto-approved."""
+        ps = PermissionSystem()
+        ps.approve("file_write", {"path": "/tmp/test.txt"})
+
+        with patch.object(ps, "_prompt_user") as mock_prompt:
+            result = ps.check_approval("file_write", {"path": "/tmp/test.txt"})
+            mock_prompt.assert_not_called()
+            assert result is True
+
+
+class TestApprovalKeyGeneration:
+    """Test approval key generation."""
+
+    def test_shell_command_key(self):
+        """Test approval key for shell commands."""
+        ps = PermissionSystem()
+        key = ps._get_approval_key("shell", {"command": "echo hello"})
+        assert key == "shell:echo"
+
+    def test_file_write_key(self):
+        """Test approval key for file_write."""
+        ps = PermissionSystem()
+        key = ps._get_approval_key("file_write", {"path": "/home/user/file.txt"})
+        assert "file_write:" in key
+
+    def test_file_edit_key(self):
+        """Test approval key for file_edit."""
+        ps = PermissionSystem()
+        key = ps._get_approval_key("file_edit", {"path": "/home/user/file.txt"})
+        assert "file_edit:" in key
+
+    def test_destructive_bypasses_session_memory(self):
+        """Test destructive commands ALWAYS require approval even if previously approved."""
+        ps = PermissionSystem()
+        
+        ps.approve("shell", {"command": "rm -rf /tmp"})
+        
+        with patch.object(ps, "_prompt_with_warning", return_value=True) as mock_warning:
+            result = ps.check_approval("shell", {"command": "rm -rf /home"})
+            mock_warning.assert_called_once()
+            assert result is True
