@@ -12,14 +12,18 @@ class ConversationManager:
             {"role": "system", "content": system_prompt}
         ]
 
-    def add_message(self, role: str, content: str) -> None:
+    def add_message(self, role: str, content: str, tool_call_id: str | None = None) -> None:
         """Add a message to the conversation history.
 
         Args:
             role: One of "user", "assistant", "tool"
             content: The message content
+            tool_call_id: ID of the tool call (required for tool role)
         """
-        self._messages.append({"role": role, "content": content})
+        message = {"role": role, "content": content}
+        if tool_call_id:
+            message["tool_call_id"] = tool_call_id
+        self._messages.append(message)
 
     def get_messages(self) -> list[dict[str, Any]]:
         """Return all messages for LLM API."""

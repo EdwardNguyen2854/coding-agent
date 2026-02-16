@@ -53,7 +53,7 @@ def parse_tool_calls(response: str) -> list[dict]:
         param_matches = re.findall(param_pattern, params_str)
         for key, value in param_matches:
             params[key] = value.strip()
-        tool_calls.append({"name": func_name, "params": params})
+        tool_calls.append({"name": func_name, "params": params, "id": f"call_{len(tool_calls)}"})
     
     return tool_calls
 
@@ -72,16 +72,18 @@ def process_response(llm_client: LLMClient, conversation: ConversationManager) -
         for tool_call in tool_calls:
             tool_name = tool_call["name"]
             tool_params = tool_call["params"]
+            tool_id = tool_call.get("id", "call_0")
+            
             click.echo(click.style(f"\n→ Running {tool_name}...", fg="yellow"))
             result = execute_tool(tool_name, tool_params)
             
             if result.is_error:
                 click.echo(click.style(f"Error: {result.error}", fg="red"))
-                conversation.add_message("tool", f"Error: {result.error}")
+                conversation.add_message("tool", f"Error: {result.error}", tool_call_id=tool_id)
             else:
                 output_preview = result.output[:100] + "..." if len(result.output) > 100 else result.output
                 click.echo(click.style(f"✓ {tool_name}: {output_preview}", fg="green"))
-                conversation.add_message("tool", result.output)
+                conversation.add_message("tool", result.output, tool_call_id=tool_id)
         
         click.echo(click.style("\n→ Continuing...\n", fg="cyan"))
         process_response(llm_client, conversation)
