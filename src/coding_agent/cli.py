@@ -26,7 +26,7 @@ except Exception:
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.1.9"
+__version__ = "0.2.0"
 
 USER_PROMPT = "You   > "
 ASSISTANT_PREFIX = "Agent > "
