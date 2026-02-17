@@ -16,6 +16,9 @@ from coding_agent.renderer import Renderer
 from coding_agent.system_prompt import SYSTEM_PROMPT
 from coding_agent.tools import execute_tool
 
+import truststore
+truststore.inject_into_ssl()
+
 import litellm
 litellm.suppress_debug_info = True
 
