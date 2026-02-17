@@ -39,7 +39,7 @@ from coding_agent.tools import execute_tool
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 USER_PROMPT = "You   > "
 ASSISTANT_PREFIX = "Agent > "
@@ -120,30 +120,31 @@ def process_response(llm_client: LLMClient, conversation: ConversationManager) -
         click.echo(f"{ASSISTANT_PREFIX}{display_response}")
     
     tool_calls = parse_tool_calls(full_response)
-    
+    conversation.add_message("assistant", full_response)
+
     if tool_calls:
+        tool_results = []
         for tool_call in tool_calls:
             tool_name = tool_call["name"]
             tool_params = tool_call["params"]
-            tool_id = tool_call.get("id", "call_0")
-            
+
             click.echo(f"[tool] {tool_name}")
             for k, v in tool_params.items():
                 click.echo(f"  - {k}: {str(v)[:80]}")
             click.echo("  running...")
-            
+
             result = execute_tool(tool_name, tool_params)
-            
+
             if result.is_error:
                 click.echo(f"  error: {result.error}")
-                conversation.add_message("tool", f"Error: {result.error}", tool_call_id=tool_id)
+                tool_results.append(f"[{tool_name}] Error: {result.error}")
             else:
                 click.echo("  done")
-                conversation.add_message("tool", result.output, tool_call_id=tool_id)
+                tool_results.append(f"[{tool_name}] {result.output}")
+
+        conversation.add_message("user", "Tool results:\n" + "\n".join(tool_results))
         click.echo("-" * 40)
         process_response(llm_client, conversation)
-    else:
-        conversation.add_message("assistant", full_response)
 
 
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
