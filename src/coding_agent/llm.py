@@ -58,10 +58,15 @@ class LLMClient:
                 f"  Error: {error.message}\n\n"
                 f"Check your LiteLLM server configuration and logs."
             ) from None
+        # Walk the exception chain to find the root cause
+        cause = error
+        while cause.__cause__:
+            cause = cause.__cause__
+        root = f"\n  Root cause: {type(cause).__name__}: {cause}" if cause is not error else ""
         raise ConnectionError(
             f"Unexpected error connecting to LiteLLM server.\n\n"
             f"  Server: {self.api_base}\n"
-            f"  Error: {type(error).__name__}: {error}"
+            f"  Error: {type(error).__name__}: {error}{root}"
         ) from None
 
     def verify_connection(self) -> None:
