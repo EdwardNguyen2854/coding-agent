@@ -5,7 +5,7 @@ This document is for coding agents operating in this repository.
 ## Project Snapshot
 
 - Name: `coding-agent`
-- Python: 3.11+
+- Python: 3.10+
 - Packaging: `src/` layout (`src/coding_agent`)
 - CLI entry point: `coding-agent`
 - Main stack: `click`, `prompt-toolkit`, `litellm`, `pydantic`, `pyyaml`, `pytest`
@@ -113,7 +113,7 @@ from coding_agent.config import AgentConfig
 
 ### Type hints
 
-- Use Python 3.11 style annotations everywhere practical.
+- Use Python 3.10+ style annotations everywhere practical.
 - Prefer concrete types like `list[dict]`, `str | None`, `Path`.
 - Add return types to all public functions.
 

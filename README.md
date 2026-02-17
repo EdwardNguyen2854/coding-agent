@@ -6,7 +6,7 @@ Self-hosted, model-agnostic AI coding agent for internal department use.
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.10+
 - [ripgrep](https://github.com/BurntSushi/ripgrep) installed and on PATH
 - Access to internal LiteLLM server
 
