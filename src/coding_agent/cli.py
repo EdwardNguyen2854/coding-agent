@@ -26,7 +26,7 @@ except Exception:
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 
 USER_PROMPT = "You   > "
 ASSISTANT_PREFIX = "Agent > "
@@ -150,8 +150,14 @@ def main(model: str | None, api_base: str | None) -> None:
         click.echo(str(e), err=True)
         sys.exit(1)
 
+    if config.https_proxy:
+        os.environ["HTTPS_PROXY"] = config.https_proxy
+        os.environ["HTTP_PROXY"] = config.https_proxy
+
     click.echo(f"Model: {config.model}")
     click.echo(f"API:   {config.api_base}")
+    if config.https_proxy:
+        click.echo(f"Proxy: {config.https_proxy}")
     click.echo("")
 
     try:

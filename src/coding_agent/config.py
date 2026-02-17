@@ -21,6 +21,7 @@ class AgentConfig(BaseModel):
     model: str
     api_base: str
     api_key: str | None = None
+    https_proxy: str | None = None
 
     @field_validator("api_base")
     @classmethod
@@ -61,7 +62,8 @@ def load_config(config_path: Path | None = None) -> AgentConfig:
             f"Expected location: {path}\n\n"
             f"Create the file with at least these required fields:\n"
             f"  model: litellm/gpt-4o\n"
-            f"  api_base: http://localhost:4000"
+            f"  api_base: http://localhost:4000\n"
+            f"  https_proxy: http://proxy.example.com:8080  # optional"
         )
 
     raw = path.read_text(encoding="utf-8")
@@ -73,7 +75,8 @@ def load_config(config_path: Path | None = None) -> AgentConfig:
             f"  Config file is empty or not a valid YAML mapping.\n\n"
             f"Required fields:\n"
             f"  model: litellm/gpt-4o\n"
-            f"  api_base: http://localhost:4000"
+            f"  api_base: http://localhost:4000\n"
+            f"  https_proxy: http://proxy.example.com:8080  # optional"
         )
 
     try:
