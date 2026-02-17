@@ -1,5 +1,6 @@
 """Conversation management for LLM context."""
 
+import json
 from typing import Any
 
 
@@ -12,14 +13,55 @@ class ConversationManager:
             {"role": "system", "content": system_prompt}
         ]
 
-    def add_message(self, role: str, content: str) -> None:
+    def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the conversation history.
 
         Args:
-            role: One of "user", "assistant"
+            role: One of "user", "assistant", "tool"
             content: The message content
+            **kwargs: Additional fields (e.g. tool_calls, tool_call_id)
         """
-        self._messages.append({"role": role, "content": content})
+        message: dict[str, Any] = {"role": role, "content": content}
+        message.update(kwargs)
+        self._messages.append(message)
+
+    def add_assistant_tool_call(self, content: str, tool_calls: list[dict]) -> None:
+        """Add an assistant message that includes native tool_calls.
+
+        Args:
+            content: Text content from the assistant (may be empty)
+            tool_calls: List of tool call dicts with id, name, arguments
+        """
+        message: dict[str, Any] = {
+            "role": "assistant",
+            "content": content or None,
+            "tool_calls": [
+                {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["name"],
+                        "arguments": tc["arguments"] if isinstance(tc["arguments"], str)
+                        else json.dumps(tc["arguments"]),
+                    },
+                }
+                for tc in tool_calls
+            ],
+        }
+        self._messages.append(message)
+
+    def add_tool_result(self, tool_call_id: str, content: str) -> None:
+        """Add a tool result message.
+
+        Args:
+            tool_call_id: The ID of the tool call this is responding to
+            content: The tool execution result
+        """
+        self._messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call_id,
+            "content": content,
+        })
 
     def get_messages(self) -> list[dict[str, Any]]:
         """Return all messages for LLM API."""
@@ -51,7 +93,11 @@ class ConversationManager:
 
     def _estimate_tokens(self) -> int:
         """Estimate total tokens using character heuristic (len/4)."""
-        return sum(len(m["content"]) // 4 for m in self._messages)
+        total = 0
+        for m in self._messages:
+            content = m.get("content") or ""
+            total += len(content) // 4
+        return total
 
     def clear(self) -> None:
         """Clear all non-system messages (called on session end)."""

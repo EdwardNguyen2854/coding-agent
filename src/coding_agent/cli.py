@@ -1,9 +1,6 @@
 """Coding-Agent CLI entry point."""
 
 import os
-import re
-import json
-
 import sys
 
 import click
@@ -48,7 +45,7 @@ ASSISTANT_PREFIX = "Agent > "
 def print_banner() -> None:
     """Print the EMN Coding Agent banner."""
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
-    
+
     banner = f"""
 ███████╗███╗   ███╗███╗   ██╗
 ██╔════╝████╗ ████║████╗  ██║
@@ -69,64 +66,29 @@ v{__version__}
     click.echo(click.style(banner, fg="cyan", bold=True))
 
 
-def parse_tool_calls(response: str) -> list[dict]:
-    """Parse tool calls from LLM response - supports both XML and JSON format."""
-    tool_calls = []
-    xml_pattern = r"<tool_call>\s*<function=([\w.-]+)>(.*?)</function>\s*</tool_call>"
-    xml_matches = re.findall(xml_pattern, response, re.DOTALL)
-
-    for func_name, body in xml_matches:
-        params: dict[str, str] = {}
-
-        named_params = re.findall(r"<parameter=(\w+)>\s*(.*?)\s*</parameter>", body, re.DOTALL)
-        for key, value in named_params:
-            params[key] = value.strip()
-
-        generic_params = re.findall(r"<(\w+)>\s*(.*?)\s*</\1>", body, re.DOTALL)
-        for key, value in generic_params:
-            if key not in params:
-                params[key] = value.strip()
-
-        tool_calls.append({"name": func_name, "params": params, "id": f"call_{len(tool_calls)}"})
-    
-    # Try JSON format
-    if not tool_calls:
-        json_pattern = r'```json\s*(\{[\s\S]*?\})\s*```'
-        json_matches = re.findall(json_pattern, response)
-        
-        for json_str in json_matches:
-            try:
-                tool_data = json.loads(json_str)
-                tool_name = tool_data.get("tool") or tool_data.get("function", {}).get("name", "")
-                tool_params = tool_data.get("parameters") or tool_data.get("function", {}).get("arguments", {})
-                if isinstance(tool_params, str):
-                    tool_params = json.loads(tool_params)
-                if tool_name and tool_params:
-                    tool_calls.append({"name": tool_name, "params": tool_params, "id": f"call_{len(tool_calls)}"})
-            except json.JSONDecodeError:
-                pass
-    
-    return tool_calls
-
-
 def process_response(llm_client: LLMClient, conversation: ConversationManager) -> None:
     """Process LLM response and execute tools if needed."""
-    full_response = ""
-    for delta in llm_client.send_message_stream(conversation.get_messages()):
-        full_response += delta
+    # Stream text deltas; the generator returns an LLMResponse when exhausted
+    gen = llm_client.send_message_stream(conversation.get_messages())
+    full_text = ""
+    try:
+        while True:
+            delta = next(gen)
+            full_text += delta
+    except StopIteration as e:
+        llm_response = e.value
 
-    display_response = re.sub(r"<tool_call>[\s\S]*?</tool_call>", "", full_response).strip()
-    if display_response:
-        click.echo(f"{ASSISTANT_PREFIX}{display_response}")
-    
-    tool_calls = parse_tool_calls(full_response)
-    conversation.add_message("assistant", full_response)
+    if full_text.strip():
+        click.echo(f"{ASSISTANT_PREFIX}{full_text.strip()}")
 
-    if tool_calls:
-        tool_results = []
-        for tool_call in tool_calls:
-            tool_name = tool_call["name"]
-            tool_params = tool_call["params"]
+    if llm_response and llm_response.tool_calls:
+        # Add assistant message with tool_calls to conversation
+        conversation.add_assistant_tool_call(llm_response.content, llm_response.tool_calls)
+
+        # Execute each tool and add results
+        for tc in llm_response.tool_calls:
+            tool_name = tc["name"]
+            tool_params = tc["arguments"]
 
             click.echo(f"[tool] {tool_name}")
             for k, v in tool_params.items():
@@ -137,14 +99,16 @@ def process_response(llm_client: LLMClient, conversation: ConversationManager) -
 
             if result.is_error:
                 click.echo(f"  error: {result.error}")
-                tool_results.append(f"[{tool_name}] Error: {result.error}")
+                conversation.add_tool_result(tc["id"], f"Error: {result.error}")
             else:
                 click.echo("  done")
-                tool_results.append(f"[{tool_name}] {result.output}")
+                conversation.add_tool_result(tc["id"], result.output)
 
-        conversation.add_message("user", "Tool results:\n" + "\n".join(tool_results))
         click.echo("-" * 40)
         process_response(llm_client, conversation)
+    else:
+        # No tool calls - just a plain text response
+        conversation.add_message("assistant", llm_response.content if llm_response else full_text)
 
 
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT

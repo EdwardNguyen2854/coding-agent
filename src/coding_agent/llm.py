@@ -1,11 +1,22 @@
 """LiteLLM client wrapper - connectivity verification and LLM communication."""
 
+import json
 import traceback
 from collections.abc import Generator
+from dataclasses import dataclass, field
 
 import litellm
 
 from coding_agent.config import AgentConfig
+from coding_agent.tools import get_openai_tools
+
+
+@dataclass
+class LLMResponse:
+    """Assembled response from streaming LLM completion."""
+
+    content: str = ""
+    tool_calls: list[dict] = field(default_factory=list)
 
 
 class LLMClient:
@@ -89,11 +100,14 @@ class LLMClient:
         except Exception as e:
             self._handle_llm_error(e)
 
-    def send_message_stream(self, messages: list[dict]) -> Generator[str, None, None]:
+    def send_message_stream(self, messages: list[dict]) -> Generator[str, None, LLMResponse]:
         """Stream a completion response, yielding text deltas.
 
         Yields text content as it arrives. After the generator is exhausted,
-        the full reassembled ModelResponse is available via self.last_response.
+        the return value (accessible via StopIteration.value) is an LLMResponse
+        containing the full text and any tool_calls.
+
+        The full reassembled ModelResponse is also available via self.last_response.
 
         Raises:
             ConnectionError: With differentiated messages for connectivity,
@@ -109,12 +123,33 @@ class LLMClient:
                 api_key=self.api_key,
                 stream=True,
                 timeout=300,
+                tools=get_openai_tools(),
             )
             for chunk in response_stream:
                 chunks.append(chunk)
-                delta = chunk.choices[0].delta.content
-                if delta:
-                    yield delta
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    yield delta.content
             self.last_response = litellm.stream_chunk_builder(chunks)
         except Exception as e:
             self._handle_llm_error(e)
+
+        # Build response from assembled result
+        result = LLMResponse()
+        if self.last_response:
+            message = self.last_response.choices[0].message
+            result.content = message.content or ""
+            if message.tool_calls:
+                for tc in message.tool_calls:
+                    arguments = tc.function.arguments
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            arguments = {}
+                    result.tool_calls.append({
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "arguments": arguments,
+                    })
+        return result
