@@ -25,7 +25,7 @@ if isinstance(ssl.SSLContext(), truststore._api.SSLContext):
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.1.6"
+__version__ = "0.1.7"
 
 USER_PROMPT = "You   > "
 ASSISTANT_PREFIX = "Agent > "
