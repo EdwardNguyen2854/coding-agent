@@ -39,7 +39,7 @@ from coding_agent.tools import execute_tool
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 USER_PROMPT = "You   > "
 ASSISTANT_PREFIX = "Agent > "
