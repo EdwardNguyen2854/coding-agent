@@ -7,21 +7,34 @@ import json
 import sys
 
 import click
-from prompt_toolkit import PromptSession
 
-from coding_agent.config import ConfigError, apply_cli_overrides, load_config
-from coding_agent.conversation import ConversationManager
-from coding_agent.llm import LLMClient
-from coding_agent.renderer import Renderer
-from coding_agent.system_prompt import SYSTEM_PROMPT
-from coding_agent.tools import execute_tool
-
+# --- Early init: truststore + proxy must be set before importing litellm/openai/httpx ---
 try:
     import truststore
     truststore.inject_into_ssl()
     click.echo("truststore: using OS certificate store")
 except Exception:
     pass
+
+from coding_agent.config import load_config
+_early_config = None
+try:
+    _early_config = load_config()
+    if _early_config.https_proxy:
+        os.environ["HTTPS_PROXY"] = _early_config.https_proxy
+        os.environ["HTTP_PROXY"] = _early_config.https_proxy
+except Exception:
+    pass
+# --- End early init ---
+
+from prompt_toolkit import PromptSession
+
+from coding_agent.config import ConfigError, apply_cli_overrides
+from coding_agent.conversation import ConversationManager
+from coding_agent.llm import LLMClient
+from coding_agent.renderer import Renderer
+from coding_agent.system_prompt import SYSTEM_PROMPT
+from coding_agent.tools import execute_tool
 
 import litellm
 litellm.suppress_debug_info = True
@@ -149,10 +162,6 @@ def main(model: str | None, api_base: str | None) -> None:
     except ConfigError as e:
         click.echo(str(e), err=True)
         sys.exit(1)
-
-    if config.https_proxy:
-        os.environ["HTTPS_PROXY"] = config.https_proxy
-        os.environ["HTTP_PROXY"] = config.https_proxy
 
     click.echo(f"Model: {config.model}")
     click.echo(f"API:   {config.api_base}")
