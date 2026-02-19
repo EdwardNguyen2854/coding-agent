@@ -39,7 +39,7 @@ from coding_agent.system_prompt import SYSTEM_PROMPT
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.3.0"
+__version__ = "0.3.2"
 
 USER_PROMPT = "You   > "
 
@@ -49,10 +49,10 @@ def print_banner() -> None:
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
 
     banner = f"""
-██████╗███╗   ███╗███╗   ██╗
-██╔════╝████╗ ████║████╗  ██║
+██████ ███╗   ███╗███╗   ██╗
+██╔═══╝████╗ ████║████╗  ██║
 ████╗  ██╔████╔██║██╔██╗ ██║
-██╔══╝  ██║╚██╔╝██║██║╚██╗██║
+██╔═╝  ██║╚██╔╝██║██║╚██╗██║
 ██████╗██║ ╚═╝ ██║██║ ╚████║
 ╚═════╝╚═╝     ╚═╝╚═╝  ╚═══╝
 

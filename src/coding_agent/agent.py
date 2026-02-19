@@ -101,6 +101,7 @@ class Agent:
             self.conversation.add_message(
                 "tool",
                 json.dumps({"error": error_msg}),
+                tool_call_id=tool_id,
             )
             self.consecutive_failures += 1
 
@@ -135,7 +136,7 @@ class Agent:
                 "error": "User denied permission to execute this tool",
                 "output": "",
             }
-            self.conversation.add_message("tool", json.dumps(denial_result))
+            self.conversation.add_message("tool", json.dumps(denial_result), tool_call_id=tool_id)
             self.renderer.print_info("  denied")
             return
 
@@ -152,7 +153,7 @@ class Agent:
                 tool_result_content = json.dumps({"error": result.error, "output": truncate_output(result.output)})
             self.consecutive_failures = 0
 
-        self.conversation.add_message("tool", tool_result_content)
+        self.conversation.add_message("tool", tool_result_content, tool_call_id=tool_id)
 
     def _save_session(self) -> None:
         """Auto-save session after assistant completes a response."""
