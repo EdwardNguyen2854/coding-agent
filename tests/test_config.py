@@ -26,6 +26,10 @@ class TestAgentConfigModel:
         assert config.model == "litellm/gpt-4o"
         assert config.api_base == "http://localhost:4000"
         assert config.api_key is None
+        # Default model parameters
+        assert config.temperature == 0.0
+        assert config.max_output_tokens == 4096
+        assert config.top_p == 1.0
 
     def test_valid_config_all_fields(self):
         """AC #2: Valid config with all fields including api_key."""
@@ -33,10 +37,16 @@ class TestAgentConfigModel:
             model="litellm/gpt-4o",
             api_base="https://llm.internal.com",
             api_key="sk-secret-key-123",
+            temperature=0.7,
+            max_output_tokens=8192,
+            top_p=0.9,
         )
         assert config.model == "litellm/gpt-4o"
         assert config.api_base == "https://llm.internal.com"
         assert config.api_key == "sk-secret-key-123"
+        assert config.temperature == 0.7
+        assert config.max_output_tokens == 8192
+        assert config.top_p == 0.9
 
     def test_missing_required_model(self):
         """AC #2: Missing model field raises validation error."""
@@ -73,10 +83,13 @@ class TestAgentConfigModel:
             model="litellm/gpt-4o",
             api_base="http://localhost:4000",
             api_key="sk-secret-key-123",
+            temperature=0.7,
         )
         repr_str = repr(config)
         assert "sk-secret-key-123" not in repr_str
         assert "***" in repr_str
+        # Check model parameters are shown
+        assert "temperature=0.7" in repr_str
 
     def test_api_key_masked_in_str(self):
         """AC #4: api_key is never displayed in str output."""
@@ -122,6 +135,34 @@ class TestLoadConfig:
         config = load_config(config_file)
         assert config.model == "litellm/gpt-4o"
         assert config.api_base == "http://localhost:4000"
+
+    def test_valid_yaml_with_model_params(self, tmp_path):
+        """AC: Valid YAML with model parameters loads successfully."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump({
+                "model": "litellm/gpt-4o",
+                "api_base": "http://localhost:4000",
+                "temperature": 0.7,
+                "max_output_tokens": 8192,
+                "top_p": 0.9,
+            })
+        )
+        config = load_config(config_file)
+        assert config.temperature == 0.7
+        assert config.max_output_tokens == 8192
+        assert config.top_p == 0.9
+
+    def test_yaml_missing_model_params_uses_defaults(self, tmp_path):
+        """AC: Missing model params uses defaults (temperature=0, max_output_tokens=4096, top_p=1.0)."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
+        )
+        config = load_config(config_file)
+        assert config.temperature == 0.0
+        assert config.max_output_tokens == 4096
+        assert config.top_p == 1.0
 
     def test_valid_yaml_with_api_key(self, tmp_path):
         """AC #2: Valid YAML with api_key loads and stores the key."""
@@ -250,6 +291,57 @@ class TestCLIOverrides:
         assert config.model == "litellm/default-model"
         assert result.model == "new-model"
 
+    def test_temperature_override(self):
+        """AC: CLI --temperature overrides config temperature."""
+        config = self._base_config()
+        result = apply_cli_overrides(config, temperature=0.7)
+        assert result.temperature == 0.7
+        assert result.max_output_tokens == 4096
+        assert result.top_p == 1.0
+
+    def test_max_output_tokens_override(self):
+        """AC: CLI --max-output-tokens overrides config max_output_tokens."""
+        config = self._base_config()
+        result = apply_cli_overrides(config, max_output_tokens=8192)
+        assert result.temperature == 0.0
+        assert result.max_output_tokens == 8192
+        assert result.top_p == 1.0
+
+    def test_top_p_override(self):
+        """AC: CLI --top-p overrides config top_p."""
+        config = self._base_config()
+        result = apply_cli_overrides(config, top_p=0.9)
+        assert result.temperature == 0.0
+        assert result.max_output_tokens == 4096
+        assert result.top_p == 0.9
+
+    def test_all_model_params_override(self):
+        """AC: All model parameters can be overridden via CLI."""
+        config = self._base_config()
+        result = apply_cli_overrides(
+            config,
+            temperature=0.5,
+            max_output_tokens=2048,
+            top_p=0.8,
+        )
+        assert result.temperature == 0.5
+        assert result.max_output_tokens == 2048
+        assert result.top_p == 0.8
+
+    def test_mixed_overrides(self):
+        """AC: Mixed model and param overrides work together."""
+        config = self._base_config()
+        result = apply_cli_overrides(
+            config,
+            model="litellm/new-model",
+            temperature=0.7,
+            max_output_tokens=8192,
+        )
+        assert result.model == "litellm/new-model"
+        assert result.temperature == 0.7
+        assert result.max_output_tokens == 8192
+        assert result.api_base == "http://localhost:4000"
+
     def test_invalid_api_base_override_rejected(self):
         """CLI --api-base with invalid URL is rejected by validation."""
         config = self._base_config()
@@ -319,6 +411,66 @@ class TestCLIIntegration:
         result = runner.invoke(main, ["--model", "override-model"])
         assert result.exit_code == 0
         assert "override-model" in result.output
+
+    @patch("coding_agent.cli.PromptSession")
+    @patch("coding_agent.cli.LLMClient")
+    def test_cli_temperature_override(self, mock_llm, mock_session, tmp_path, monkeypatch):
+        """AC: CLI --temperature flag shows in output."""
+        from click.testing import CliRunner
+
+        from coding_agent.cli import main
+
+        mock_session.return_value.prompt.side_effect = EOFError()
+        mock_llm.return_value.verify_connection.return_value = None
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
+        )
+        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        runner = CliRunner()
+        result = runner.invoke(main, ["--temperature", "0.7"])
+        assert result.exit_code == 0
+        assert "Temp:  0.7" in result.output
+
+    @patch("coding_agent.cli.PromptSession")
+    @patch("coding_agent.cli.LLMClient")
+    def test_cli_max_output_tokens_override(self, mock_llm, mock_session, tmp_path, monkeypatch):
+        """AC: CLI --max-output-tokens flag shows in output."""
+        from click.testing import CliRunner
+
+        from coding_agent.cli import main
+
+        mock_session.return_value.prompt.side_effect = EOFError()
+        mock_llm.return_value.verify_connection.return_value = None
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
+        )
+        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        runner = CliRunner()
+        result = runner.invoke(main, ["--max-output-tokens", "8192"])
+        assert result.exit_code == 0
+        assert "MaxTok: 8192" in result.output
+
+    @patch("coding_agent.cli.PromptSession")
+    @patch("coding_agent.cli.LLMClient")
+    def test_cli_top_p_override(self, mock_llm, mock_session, tmp_path, monkeypatch):
+        """AC: CLI --top-p flag shows in output."""
+        from click.testing import CliRunner
+
+        from coding_agent.cli import main
+
+        mock_session.return_value.prompt.side_effect = EOFError()
+        mock_llm.return_value.verify_connection.return_value = None
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
+        )
+        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        runner = CliRunner()
+        result = runner.invoke(main, ["--top-p", "0.9"])
+        assert result.exit_code == 0
+        assert "TopP:  0.9" in result.output
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")

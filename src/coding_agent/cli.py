@@ -26,6 +26,7 @@ except Exception:
 
 from prompt_toolkit import PromptSession
 
+from coding_agent.agent import Agent
 from coding_agent.config import ConfigError, apply_cli_overrides
 from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
@@ -34,7 +35,6 @@ from coding_agent.renderer import Renderer
 from coding_agent.session import SessionManager
 from coding_agent.slash_commands import execute_command
 from coding_agent.system_prompt import SYSTEM_PROMPT
-from coding_agent.tools import execute_tool
 
 import litellm
 litellm.suppress_debug_info = True
@@ -42,7 +42,6 @@ litellm.suppress_debug_info = True
 __version__ = "0.3.0"
 
 USER_PROMPT = "You   > "
-ASSISTANT_PREFIX = "Agent > "
 
 
 def print_banner() -> None:
@@ -50,12 +49,12 @@ def print_banner() -> None:
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
 
     banner = f"""
-███████╗███╗   ███╗███╗   ██╗
+██████╗███╗   ███╗███╗   ██╗
 ██╔════╝████╗ ████║████╗  ██║
-█████╗  ██╔████╔██║██╔██╗ ██║
+████╗  ██╔████╔██║██╔██╗ ██║
 ██╔══╝  ██║╚██╔╝██║██║╚██╗██║
-███████╗██║ ╚═╝ ██║██║ ╚████║
-╚══════╝╚═╝     ╚═╝╚═╝  ╚═══╝
+██████╗██║ ╚═╝ ██║██║ ╚████║
+╚═════╝╚═╝     ╚═╝╚═╝  ╚═══╝
 
  ██████╗ ██████╗ ██████╗ ██╗███╗   ██╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
 ██╔════╝██╔═══██╗██╔══██╗██║████╗  ██║██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
@@ -67,56 +66,6 @@ def print_banner() -> None:
 v{__version__}
 """
     click.echo(click.style(banner, fg="cyan", bold=True))
-
-
-def process_response(llm_client: LLMClient, conversation: ConversationManager, session_manager: SessionManager | None = None, session_data: dict | None = None) -> None:
-    """Process LLM response and execute tools if needed."""
-    # Stream text deltas; the generator returns an LLMResponse when exhausted
-    gen = llm_client.send_message_stream(conversation.get_messages())
-    full_text = ""
-    try:
-        while True:
-            delta = next(gen)
-            full_text += delta
-    except StopIteration as e:
-        llm_response = e.value
-
-    if full_text.strip():
-        click.echo(f"{ASSISTANT_PREFIX}{full_text.strip()}")
-
-    if llm_response and llm_response.tool_calls:
-        # Add assistant message with tool_calls to conversation
-        conversation.add_assistant_tool_call(llm_response.content, llm_response.tool_calls)
-
-        # Execute each tool and add results
-        for tc in llm_response.tool_calls:
-            tool_name = tc["name"]
-            tool_params = tc["arguments"]
-
-            click.echo(f"[tool] {tool_name}")
-            for k, v in tool_params.items():
-                click.echo(f"  - {k}: {str(v)[:80]}")
-            click.echo("  running...")
-
-            result = execute_tool(tool_name, tool_params)
-
-            if result.is_error:
-                click.echo(f"  error: {result.error}")
-                conversation.add_tool_result(tc["id"], f"Error: {result.error}")
-            else:
-                click.echo("  done")
-                conversation.add_tool_result(tc["id"], result.output)
-
-        click.echo("-" * 40)
-        process_response(llm_client, conversation, session_manager, session_data)
-    else:
-        # No tool calls - just a plain text response
-        conversation.add_message("assistant", llm_response.content if llm_response else full_text)
-
-        # Auto-save session after assistant completes a response
-        if session_manager and session_data:
-            session_data["messages"] = conversation.get_messages()
-            session_manager.save(session_data)
 
 
 def _restore_conversation(conversation: ConversationManager, messages: list[dict]) -> int:
@@ -159,15 +108,25 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 @click.command()
 @click.option("--model", default=None, help="Override LLM model (e.g., litellm/gpt-4o)")
 @click.option("--api-base", default=None, help="Override LiteLLM API base URL")
+@click.option("--temperature", default=None, type=float, help="Override temperature (0.0-2.0)")
+@click.option("--max-output-tokens", "max_output_tokens", default=None, type=int, help="Override max output tokens")
+@click.option("--top-p", default=None, type=float, help="Override top_p (0.0-1.0)")
 @click.option("--resume", is_flag=True, help="Resume the most recent session")
 @click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
-def main(model: str | None, api_base: str | None, resume: bool, session_id: str | None) -> None:
+def main(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
     print_banner()
 
     try:
         config = load_config()
-        config = apply_cli_overrides(config, model=model, api_base=api_base)
+        config = apply_cli_overrides(
+            config,
+            model=model,
+            api_base=api_base,
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+            top_p=top_p,
+        )
     except ConfigError as e:
         click.echo(str(e), err=True)
         sys.exit(1)
@@ -176,8 +135,11 @@ def main(model: str | None, api_base: str | None, resume: bool, session_id: str 
     click.echo(f"API:   {config.api_base}")
     if config.https_proxy:
         click.echo(f"Proxy: {config.https_proxy}")
+    click.echo(f"Temp:  {config.temperature}")
+    click.echo(f"MaxTok: {config.max_output_tokens}")
+    click.echo(f"TopP:  {config.top_p}")
     click.echo("")
-
+    
     try:
         llm_client = LLMClient(config)
         llm_client.verify_connection()
@@ -199,6 +161,9 @@ def main(model: str | None, api_base: str | None, resume: bool, session_id: str 
     session_data = None
     conversation = ConversationManager(enhanced_prompt)
 
+    # Create Agent instance
+    agent = Agent(llm_client, conversation, renderer)
+
     # Handle session resume
     if resume:
         loaded_session = session_manager.load_latest()
@@ -206,6 +171,7 @@ def main(model: str | None, api_base: str | None, resume: bool, session_id: str 
             session_data = loaded_session
             msg_count = _restore_conversation(conversation, loaded_session.get("messages", []))
             click.echo(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
+            agent.set_session(session_manager, session_data)
         else:
             click.echo(click.style("No previous sessions found. Starting a new session.", fg="yellow"))
     elif session_id:
@@ -214,6 +180,7 @@ def main(model: str | None, api_base: str | None, resume: bool, session_id: str 
             session_data = loaded_session
             msg_count = _restore_conversation(conversation, loaded_session.get("messages", []))
             click.echo(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
+            agent.set_session(session_manager, session_data)
         else:
             click.echo(click.style(f"Session not found: {session_id}", fg="red"), err=True)
             sys.exit(1)
@@ -237,7 +204,7 @@ def main(model: str | None, api_base: str | None, resume: bool, session_id: str 
             continue
         
         # Check for slash commands
-        should_continue = execute_command(text, conversation, session_manager, renderer)
+        should_continue = execute_command(text, conversation, session_manager, renderer, llm_client)
         if should_continue is False:
             break
         if should_continue is True:
@@ -251,10 +218,14 @@ def main(model: str | None, api_base: str | None, resume: bool, session_id: str 
                 messages=conversation.get_messages()
             )
             click.echo(f"Session created: {session_data['title']}")
+            agent.set_session(session_manager, session_data)
 
-        conversation.add_message("user", text)
-
+        # Delegate to Agent for ReAct loop
         try:
-            process_response(llm_client, conversation, session_manager, session_data)
+            agent.run(text)
+            # Show status line after response
+            token_count = conversation._estimate_tokens() if hasattr(conversation, '_estimate_tokens') else None
+            session_id = session_data.get("id") if session_data else None
+            renderer.render_status_line(config.model, token_count, session_id)
         except ConnectionError as e:
             renderer.print_error(str(e))

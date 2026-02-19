@@ -23,6 +23,11 @@ class AgentConfig(BaseModel):
     api_key: str | None = None
     https_proxy: str | None = None
 
+    # Model sampling parameters
+    temperature: float = 0.0
+    max_output_tokens: int = 4096
+    top_p: float = 1.0
+
     @field_validator("api_base")
     @classmethod
     def validate_api_base(cls, v: str) -> str:
@@ -35,7 +40,10 @@ class AgentConfig(BaseModel):
         return (
             f"AgentConfig(model={self.model!r}, "
             f"api_base={self.api_base!r}, "
-            f"api_key={api_key_display!r})"
+            f"api_key={api_key_display!r}, "
+            f"temperature={self.temperature!r}, "
+            f"max_output_tokens={self.max_output_tokens!r}, "
+            f"top_p={self.top_p!r})"
         )
 
     def __str__(self) -> str:
@@ -97,6 +105,9 @@ def apply_cli_overrides(
     config: AgentConfig,
     model: str | None = None,
     api_base: str | None = None,
+    temperature: float | None = None,
+    max_output_tokens: int | None = None,
+    top_p: float | None = None,
 ) -> AgentConfig:
     """Apply CLI flag overrides to config. Returns a new AgentConfig instance.
 
@@ -107,6 +118,12 @@ def apply_cli_overrides(
         overrides["model"] = model
     if api_base is not None:
         overrides["api_base"] = api_base
+    if temperature is not None:
+        overrides["temperature"] = temperature
+    if max_output_tokens is not None:
+        overrides["max_output_tokens"] = max_output_tokens
+    if top_p is not None:
+        overrides["top_p"] = top_p
 
     if not overrides:
         return config
