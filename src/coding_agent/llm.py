@@ -105,7 +105,7 @@ class LLMClient:
         except Exception as e:
             self._handle_llm_error(e)
 
-    def send_message_stream(self, messages: list[dict]) -> Generator[str, None, LLMResponse]:
+    def send_message_stream(self, messages: list[dict], tools: list[dict] | None = None) -> Generator[str, None, LLMResponse]:
         """Stream a completion response, yielding text deltas.
 
         Yields text content as it arrives. After the generator is exhausted,
@@ -128,7 +128,7 @@ class LLMClient:
                 api_key=self.api_key,
                 stream=True,
                 timeout=300,
-                tools=get_openai_tools(),
+                tools=tools,
                 temperature=self.temperature,
                 max_tokens=self.max_output_tokens,
                 top_p=self.top_p,

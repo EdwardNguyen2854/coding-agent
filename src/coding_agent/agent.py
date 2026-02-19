@@ -44,15 +44,12 @@ class Agent:
         while True:
             messages = self.conversation.get_messages()
 
+            # Get tools but don't add them to messages - pass separately to LLM
             tools = get_openai_tools()
-            if tools:
-                messages_with_tools = [{"tools": tools}] + messages
-            else:
-                messages_with_tools = messages
 
             full_text = ""
             try:
-                for delta in self.llm_client.send_message_stream(messages_with_tools):
+                for delta in self.llm_client.send_message_stream(messages, tools=tools):
                     print(delta, end="", flush=True)
                     full_text += delta
             except Exception as e:

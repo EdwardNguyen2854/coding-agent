@@ -39,7 +39,7 @@ from coding_agent.system_prompt import SYSTEM_PROMPT
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 
 USER_PROMPT = "You   > "
 
@@ -48,10 +48,11 @@ def print_banner() -> None:
     """Print the EMN Coding Agent banner."""
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
 
-    banner = f"""
-██████ ███╗   ███╗███╗   ██╗
+    try:
+        banner = f"""
+█████ ███╗   ███╗███╗   ██╗
 ██╔═══╝████╗ ████║████╗  ██║
-████╗  ██╔████╔██║██╔██╗ ██║
+███╗  ██╔████╔██║██╔██╗ ██║
 ██╔═╝  ██║╚██╔╝██║██║╚██╗██║
 ██████╗██║ ╚═╝ ██║██║ ╚████║
 ╚═════╝╚═╝     ╚═╝╚═╝  ╚═══╝
@@ -65,7 +66,10 @@ def print_banner() -> None:
 
 v{__version__}
 """
-    click.echo(click.style(banner, fg="cyan", bold=True))
+        click.echo(click.style(banner, fg="cyan", bold=True))
+    except UnicodeEncodeError:
+        # Fallback for Windows console without UTF-8 support
+        click.echo(click.style(f"Coding Agent v{__version__}", fg="cyan", bold=True))
 
 
 def _restore_conversation(conversation: ConversationManager, messages: list[dict]) -> int:
@@ -187,11 +191,17 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
 
     click.echo(click.style("Type 'exit' to quit.\n", fg="green"))
 
-    session = PromptSession()
+    # Try prompt_toolkit, fallback to stdin if it fails (e.g., in non-Windows console)
+    try:
+        session = PromptSession()
+        input_func = lambda: session.prompt(USER_PROMPT)
+    except Exception:
+        # Fallback for non-Windows console environments
+        input_func = lambda: input(USER_PROMPT.replace("You   > ", ""))
 
     while True:
         try:
-            text = session.prompt(USER_PROMPT)
+            text = input_func()
         except KeyboardInterrupt:
             click.echo("\nUse Ctrl+D or type 'exit' to quit.")
             continue
