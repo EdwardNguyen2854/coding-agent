@@ -75,6 +75,39 @@ class ConversationManager:
         """Return all messages for LLM API."""
         return self._messages.copy()
 
+    def get_messages_simplified(self) -> list[dict[str, Any]]:
+        """Return messages with tool call/result pairs flattened to plain text.
+
+        Converts assistant messages with tool_calls and role=tool messages into
+        plain assistant text, for use with models that don't support tool calling.
+        """
+        simplified: list[dict[str, Any]] = []
+        i = 0
+        while i < len(self._messages):
+            msg = self._messages[i]
+            role = msg.get("role")
+            if role == "assistant" and msg.get("tool_calls"):
+                parts = [msg.get("content") or ""]
+                for tc in msg.get("tool_calls", []):
+                    fn = tc.get("function", {})
+                    parts.append(f"[Tool: {fn.get('name', '?')}({fn.get('arguments', '')})]")
+                # Absorb following tool result messages
+                while i + 1 < len(self._messages) and self._messages[i + 1].get("role") == "tool":
+                    i += 1
+                    tool_content = self._messages[i].get("content", "")
+                    if tool_content:
+                        parts.append(f"[Result: {tool_content[:300]}]")
+                simplified.append({
+                    "role": "assistant",
+                    "content": "\n".join(p for p in parts if p) or "[Tool call]",
+                })
+            elif role == "tool":
+                pass  # Orphaned tool result — skip
+            else:
+                simplified.append({k: v for k, v in msg.items()})
+            i += 1
+        return simplified
+
     def truncate_if_needed(self, max_tokens: int = 128000) -> None:
         """Truncate conversation history to prevent context overflow.
 

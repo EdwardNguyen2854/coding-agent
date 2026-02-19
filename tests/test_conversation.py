@@ -147,6 +147,65 @@ class TestConversationManager:
         assert isinstance(cm.token_count, int)
         assert cm.token_count > 0
 
+    def test_get_messages_simplified_plain_messages_unchanged(self):
+        """get_messages_simplified() leaves plain user/assistant messages untouched."""
+        cm = ConversationManager("System prompt")
+        cm.add_message("user", "Hello")
+        cm.add_message("assistant", "Hi there")
+
+        simplified = cm.get_messages_simplified()
+
+        assert len(simplified) == 3  # system + user + assistant
+        assert simplified[1] == {"role": "user", "content": "Hello"}
+        assert simplified[2] == {"role": "assistant", "content": "Hi there"}
+
+    def test_get_messages_simplified_flattens_tool_pair(self):
+        """get_messages_simplified() flattens assistant(tool_calls)+tool pairs to plain text."""
+        cm = ConversationManager("System")
+        cm.add_message("user", "Check something")
+        cm.add_assistant_tool_call("", [{"id": "c1", "name": "shell", "arguments": '{"command":"ls"}'}])
+        cm.add_tool_result("c1", "file1.py\nfile2.py")
+
+        simplified = cm.get_messages_simplified()
+
+        # system + user + flattened assistant (no tool messages)
+        assert len(simplified) == 3
+        last = simplified[2]
+        assert last["role"] == "assistant"
+        assert "tool_calls" not in last
+        assert "shell" in last["content"]
+        assert "file1.py" in last["content"]
+
+    def test_get_messages_simplified_multiple_tool_pairs(self):
+        """get_messages_simplified() handles multiple sequential tool rounds."""
+        cm = ConversationManager("System")
+        cm.add_message("user", "Do two things")
+        cm.add_assistant_tool_call("Step 1", [{"id": "a1", "name": "read", "arguments": '{"path":"f"}'}])
+        cm.add_tool_result("a1", "content of f")
+        cm.add_assistant_tool_call("Step 2", [{"id": "a2", "name": "write", "arguments": '{"path":"g"}'}])
+        cm.add_tool_result("a2", "wrote ok")
+
+        simplified = cm.get_messages_simplified()
+
+        # system + user + 2 flattened assistant messages
+        assert len(simplified) == 4
+        assert simplified[2]["role"] == "assistant"
+        assert simplified[3]["role"] == "assistant"
+        assert "read" in simplified[2]["content"]
+        assert "write" in simplified[3]["content"]
+
+    def test_get_messages_simplified_no_tool_messages_in_output(self):
+        """get_messages_simplified() never includes role=tool messages."""
+        cm = ConversationManager("System")
+        cm.add_message("user", "Go")
+        cm.add_assistant_tool_call("", [{"id": "x1", "name": "shell", "arguments": "{}"}])
+        cm.add_tool_result("x1", "done")
+
+        simplified = cm.get_messages_simplified()
+
+        roles = [m["role"] for m in simplified]
+        assert "tool" not in roles
+
     def test_truncation_prunes_tool_outputs_first(self):
         """truncate_if_needed() prunes tool outputs before removing message pairs."""
         cm = ConversationManager("System")

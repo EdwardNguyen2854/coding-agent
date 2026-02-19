@@ -32,6 +32,49 @@ class Agent:
         self.permissions = PermissionSystem(renderer)
         self.max_context_tokens = config.max_context_tokens if config else 128000
 
+    @staticmethod
+    def _has_tool_messages(messages: list[dict]) -> bool:
+        """Return True if messages contain any tool call or tool result entries."""
+        return any(
+            m.get("role") == "tool" or (m.get("role") == "assistant" and m.get("tool_calls"))
+            for m in messages
+        )
+
+    def _call_llm(self, messages: list[dict], tools: list[dict] | None) -> bool:
+        """Stream an LLM completion, retrying with simplified history on tool-format rejection.
+
+        When a model rejects tool-formatted messages (BadRequestError), strips tool
+        call/result pairs to plain text and retries without tools.
+
+        Args:
+            messages: Conversation messages to send.
+            tools: Tool definitions, or None to disable tool calling.
+
+        Returns:
+            True on success, False on unrecoverable error.
+        """
+        try:
+            with self.renderer.render_streaming_live() as display:
+                display.start_thinking()
+                for delta in self.llm_client.send_message_stream(messages, tools=tools):
+                    display.update(delta)
+            return True
+        except ConnectionError as e:
+            if "rejected the request" in str(e) and self._has_tool_messages(messages):
+                self.renderer.print_info("  Retrying with simplified history (model lacks tool support)...")
+                simplified = self.conversation.get_messages_simplified()
+                try:
+                    with self.renderer.render_streaming_live() as display:
+                        display.start_thinking()
+                        for delta in self.llm_client.send_message_stream(simplified, tools=None):
+                            display.update(delta)
+                    return True
+                except Exception as retry_err:
+                    self.renderer.print_error(f"Error: {str(retry_err)}")
+                    return False
+            self.renderer.print_error(f"Error: {str(e)}")
+            return False
+
     def run(self, user_input: str) -> str:
         """Run the ReAct agent loop until no more tool calls.
 
@@ -46,20 +89,11 @@ class Agent:
         while True:
             # Auto-truncate before every LLM call to prevent context overflow
             self.conversation.truncate_if_needed(max_tokens=self.max_context_tokens)
-            
-            messages = self.conversation.get_messages()
 
-            # Get tools but don't add them to messages - pass separately to LLM
+            messages = self.conversation.get_messages()
             tools = get_openai_tools()
 
-            try:
-                with self.renderer.render_streaming_live() as display:
-                    display.start_thinking()
-                    for delta in self.llm_client.send_message_stream(messages, tools=tools):
-                        display.update(delta)
-                    full_text = display.full_text
-            except Exception as e:
-                self.renderer.print_error(f"Error: {str(e)}")
+            if not self._call_llm(messages, tools):
                 return ""
 
             response = self.llm_client.last_response
