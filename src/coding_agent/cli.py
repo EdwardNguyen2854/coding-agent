@@ -39,36 +39,24 @@ from coding_agent.system_prompt import SYSTEM_PROMPT
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.3.4"
+__version__ = "0.3.5"
 
 USER_PROMPT = "You   > "
 
 
 def print_banner() -> None:
-    """Print the EMN Coding Agent banner."""
+    """Print the Coding Agent banner."""
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
 
     try:
         banner = f"""
-█████ ███╗   ███╗███╗   ██╗
-██╔═══╝████╗ ████║████╗  ██║
-███╗  ██╔████╔██║██╔██╗ ██║
-██╔═╝  ██║╚██╔╝██║██║╚██╗██║
-██████╗██║ ╚═╝ ██║██║ ╚████║
-╚═════╝╚═╝     ╚═╝╚═╝  ╚═══╝
-
- ██████╗ ██████╗ ██████╗ ██╗███╗   ██╗ ██████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗
-██╔════╝██╔═══██╗██╔══██╗██║████╗  ██║██╔════╝      ██╔══██╗██╔════╝ ██╔════╝████╗  ██║╚══██╔══╝
-██║     ██║   ██║██║  ██║██║██╔██╗ ██║██║  ███╗     ███████║██║  ███╗█████╗  ██╔██╗ ██║   ██║
-██║     ██║   ██║██║  ██║██║██║╚██╗██║██║   ██║     ██╔══██║██║   ██║██╔══╝  ██║╚██╗██║   ██║
- ██████╗╚██████╔╝██████╔╝██║██║ ╚████║╚██████╔╝     ██║  ██║╚██████╔╝███████╗██║ ╚████║   ██║
- ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝╚═╝  ╚═══╝ ╚═════╝      ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝  ╚═══╝   ╚═╝
-
-v{__version__}
+  ╔═══════════════════════════════════════════╗
+  ║         CODING AGENT v{__version__}              ║
+  ║         AI-powered coding assistant        ║
+  ╚═══════════════════════════════════════════╝
 """
         click.echo(click.style(banner, fg="cyan", bold=True))
     except UnicodeEncodeError:
-        # Fallback for Windows console without UTF-8 support
         click.echo(click.style(f"Coding Agent v{__version__}", fg="cyan", bold=True))
 
 
