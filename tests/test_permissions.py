@@ -1,6 +1,5 @@
 """Tests for permission system."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 from coding_agent.permissions import PermissionSystem, TOOLS_REQUIRING_APPROVAL
@@ -200,10 +199,120 @@ class TestApprovalKeyGeneration:
     def test_destructive_bypasses_session_memory(self):
         """Test destructive commands ALWAYS require approval even if previously approved."""
         ps = PermissionSystem()
-        
+
         ps.approve("shell", {"command": "rm -rf /tmp"})
-        
+
         with patch.object(ps, "_prompt_with_warning", return_value=True) as mock_warning:
             result = ps.check_approval("shell", {"command": "rm -rf /home"})
             mock_warning.assert_called_once()
             assert result is True
+
+
+class TestPromptToolkitUsage:
+    """Test that permission prompts use prompt_toolkit instead of input()."""
+
+    def test_prompt_user_uses_prompt_toolkit(self):
+        """Test _prompt_user uses prompt_toolkit.prompt instead of input()."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="y") as mock_pt:
+            result = ps._prompt_user("file_write", {"path": "/tmp/test.txt"})
+            mock_pt.assert_called_once()
+            assert result is True
+
+    def test_prompt_user_empty_response_approves(self):
+        """Test empty response is treated as approval (default yes)."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="") as mock_pt:
+            result = ps._prompt_user("file_write", {"path": "/tmp/test.txt"})
+            assert result is True
+
+    def test_prompt_user_deny_returns_false(self):
+        """Test 'n' response denies approval."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="n"):
+            result = ps._prompt_user("file_write", {"path": "/tmp/test.txt"})
+            assert result is False
+
+    def test_prompt_with_warning_uses_prompt_toolkit(self):
+        """Test _prompt_with_warning uses prompt_toolkit.prompt instead of input()."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="y") as mock_pt:
+            result = ps._prompt_with_warning("shell", {"command": "rm -rf /tmp"})
+            mock_pt.assert_called_once()
+            assert result is True
+
+    def test_prompt_with_warning_deny_returns_false(self):
+        """Test _prompt_with_warning with 'n' denies approval."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="n"):
+            result = ps._prompt_with_warning("shell", {"command": "rm -rf /tmp"})
+            assert result is False
+
+
+class TestPromptToolkitStyling:
+    """Test that permission prompts use styled formatting matching REPL."""
+
+    def test_prompt_user_uses_formatted_text(self):
+        """Test _prompt_user passes FormattedText with ANSI cyan styling."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="y") as mock_pt:
+            ps._prompt_user("file_write", {"path": "/tmp/test.txt"})
+            call_args = mock_pt.call_args
+            prompt_arg = call_args[0][0] if call_args[0] else call_args[1].get("message")
+            assert isinstance(prompt_arg, list)
+            # Check ANSI cyan styling is present (not class: which requires Style)
+            styles = [style for style, _ in prompt_arg]
+            assert any("cyan" in s for s in styles)
+
+    def test_prompt_with_warning_uses_formatted_text(self):
+        """Test _prompt_with_warning passes FormattedText with red bold styling."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="y") as mock_pt:
+            ps._prompt_with_warning("shell", {"command": "rm -rf /tmp"})
+            call_args = mock_pt.call_args
+            prompt_arg = call_args[0][0] if call_args[0] else call_args[1].get("message")
+            assert isinstance(prompt_arg, list)
+            # Verify warning-specific red bold styling
+            styles = [style for style, _ in prompt_arg]
+            assert any("red" in s for s in styles)
+
+    def test_prompt_includes_yn_hint(self):
+        """Test permission prompts include [Y/n] key hint."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", return_value="y") as mock_pt:
+            ps._prompt_user("file_write", {"path": "/tmp/test.txt"})
+            call_args = mock_pt.call_args
+            prompt_arg = call_args[0][0] if call_args[0] else call_args[1].get("message")
+            # Check that [Y/n] hint is in the prompt text
+            prompt_text = "".join(text for _, text in prompt_arg)
+            assert "[Y/n]" in prompt_text
+
+
+class TestPromptToolkitFallback:
+    """Test fallback to input() when prompt_toolkit fails."""
+
+    def test_prompt_user_falls_back_to_input(self):
+        """Test _prompt_user falls back to input() if pt_prompt raises."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", side_effect=RuntimeError("no terminal")):
+            with patch("builtins.input", return_value="y") as mock_input:
+                result = ps._prompt_user("file_write", {"path": "/tmp/test.txt"})
+                mock_input.assert_called_once()
+                assert result is True
+
+    def test_prompt_user_fallback_deny(self):
+        """Test _prompt_user fallback with deny response."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", side_effect=RuntimeError("no terminal")):
+            with patch("builtins.input", return_value="n"):
+                result = ps._prompt_user("file_write", {"path": "/tmp/test.txt"})
+                assert result is False
+
+    def test_prompt_with_warning_falls_back_to_input(self):
+        """Test _prompt_with_warning falls back to input() if pt_prompt raises."""
+        ps = PermissionSystem()
+        with patch("coding_agent.permissions.pt_prompt", side_effect=RuntimeError("no terminal")):
+            with patch("builtins.input", return_value="y") as mock_input:
+                result = ps._prompt_with_warning("shell", {"command": "rm -rf /tmp"})
+                mock_input.assert_called_once()
+                assert result is True

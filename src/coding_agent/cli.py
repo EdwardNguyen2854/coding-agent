@@ -39,7 +39,7 @@ from coding_agent.system_prompt import SYSTEM_PROMPT
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.3.5"
+from coding_agent import __version__
 
 USER_PROMPT = "You   > "
 
@@ -51,8 +51,8 @@ def print_banner() -> None:
     try:
         banner = f"""
   ╔═══════════════════════════════════════════╗
-  ║         CODING AGENT v{__version__}              ║
-  ║         AI-powered coding assistant        ║
+  ║          EMN CODING AGENT v{__version__}           ║
+  ║        AI-powered coding assistant        ║
   ╚═══════════════════════════════════════════╝
 """
         click.echo(click.style(banner, fg="cyan", bold=True))
@@ -98,6 +98,7 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 
 
 @click.command()
+@click.version_option(version=__version__, prog_name="coding-agent")
 @click.option("--model", default=None, help="Override LLM model (e.g., litellm/gpt-4o)")
 @click.option("--api-base", default=None, help="Override LiteLLM API base URL")
 @click.option("--temperature", default=None, type=float, help="Override temperature (0.0-2.0)")
@@ -151,10 +152,10 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
 
     session_manager = SessionManager()
     session_data = None
-    conversation = ConversationManager(enhanced_prompt)
+    conversation = ConversationManager(enhanced_prompt, model=config.model)
 
     # Create Agent instance
-    agent = Agent(llm_client, conversation, renderer)
+    agent = Agent(llm_client, conversation, renderer, config=config)
 
     # Handle session resume
     if resume:
@@ -222,7 +223,7 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         try:
             agent.run(text)
             # Show status line after response
-            token_count = conversation._estimate_tokens() if hasattr(conversation, '_estimate_tokens') else None
+            token_count = conversation.token_count
             session_id = session_data.get("id") if session_data else None
             renderer.render_status_line(config.model, token_count, session_id)
         except ConnectionError as e:

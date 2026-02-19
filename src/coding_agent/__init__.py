@@ -1,3 +1,5 @@
 """Coding-Agent - Self-hosted, model-agnostic AI coding agent."""
 
-__version__ = "0.3.5"
+from importlib.metadata import version
+
+__version__ = version("coding-agent")

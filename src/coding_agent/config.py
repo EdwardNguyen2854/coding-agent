@@ -28,6 +28,9 @@ class AgentConfig(BaseModel):
     max_output_tokens: int = 4096
     top_p: float = 1.0
 
+    # Context management
+    max_context_tokens: int = 128000
+
     @field_validator("api_base")
     @classmethod
     def validate_api_base(cls, v: str) -> str:

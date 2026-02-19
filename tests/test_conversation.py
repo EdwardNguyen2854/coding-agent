@@ -106,10 +106,63 @@ class TestConversationManager:
         assert messages[0]["content"] == "My custom system prompt"
 
     def test_character_heuristic_estimates_tokens(self):
-        """_estimate_tokens() uses len//4 heuristic."""
+        """_estimate_tokens_heuristic() uses len//4 heuristic."""
         cm = ConversationManager("System")
         cm.add_message("user", "Hello")  # 5 chars -> 1 token
         cm.add_message("assistant", "Hi there")  # 8 chars -> 2 tokens
         # System: 6 chars -> 1 token
         # Total: 5 + 8 + 6 = 19 chars // 4 = 4 tokens
-        assert cm._estimate_tokens() == 4
+        assert cm._estimate_tokens_heuristic() == 4
+
+    def test_prune_oldest_tool_output(self):
+        """_prune_oldest_tool_output() truncates long tool outputs."""
+        cm = ConversationManager("System")
+        cm.add_message("user", "List files")
+        cm.add_message("assistant", "Running ls")
+        long_output = "file1.txt\n" * 500  # Long output
+        cm.add_message("tool", long_output)
+
+        # Should prune the tool output
+        result = cm._prune_oldest_tool_output()
+        assert result is True
+        # Content should be truncated
+        assert len(cm.get_messages()[-1]["content"]) < len(long_output)
+        assert "[truncated]" in cm.get_messages()[-1]["content"]
+
+    def test_prune_oldest_tool_output_no_long_outputs(self):
+        """_prune_oldest_tool_output() returns False when no long outputs."""
+        cm = ConversationManager("System")
+        cm.add_message("tool", "short")
+
+        result = cm._prune_oldest_tool_output()
+        assert result is False
+
+    def test_token_count_property(self):
+        """token_count property returns estimated tokens."""
+        cm = ConversationManager("System")
+        cm.add_message("user", "Hello")
+        cm.add_message("assistant", "Hi")
+
+        # token_count should return a number
+        assert isinstance(cm.token_count, int)
+        assert cm.token_count > 0
+
+    def test_truncation_prunes_tool_outputs_first(self):
+        """truncate_if_needed() prunes tool outputs before removing message pairs."""
+        cm = ConversationManager("System")
+        long_output = "x" * 5000  # Long tool output
+        
+        cm.add_message("user", "First question")
+        cm.add_message("assistant", "First answer")
+        cm.add_message("tool", long_output)
+        cm.add_message("user", "Second question")
+        cm.add_message("assistant", "Second answer")
+        
+        # Check that pruning reduces content size before truncation
+        cm._prune_oldest_tool_output()
+        
+        # Tool output should be truncated
+        messages = cm.get_messages()
+        tool_msg = [m for m in messages if m.get("role") == "tool"][0]
+        assert len(tool_msg["content"]) < len(long_output)
+        assert "[truncated]" in tool_msg["content"]

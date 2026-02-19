@@ -11,7 +11,7 @@ from coding_agent.utils import truncate_output
 class Agent:
     """ReAct agent that orchestrates LLM calls and tool execution."""
 
-    def __init__(self, llm_client, conversation, renderer, session_manager=None, session_data=None) -> None:
+    def __init__(self, llm_client, conversation, renderer, session_manager=None, session_data=None, config=None) -> None:
         """Initialize the agent.
 
         Args:
@@ -20,6 +20,7 @@ class Agent:
             renderer: Renderer for output
             session_manager: SessionManager for auto-save (optional)
             session_data: Session data dict for auto-save (optional)
+            config: AgentConfig for settings like max_context_tokens (optional)
         """
         self.llm_client = llm_client
         self.conversation = conversation
@@ -29,6 +30,7 @@ class Agent:
         self.max_retries = 3
         self.consecutive_failures = 0
         self.permissions = PermissionSystem(renderer)
+        self.max_context_tokens = config.max_context_tokens if config else 128000
 
     def run(self, user_input: str) -> str:
         """Run the ReAct agent loop until no more tool calls.
@@ -42,6 +44,9 @@ class Agent:
         self.conversation.add_message("user", user_input)
 
         while True:
+            # Auto-truncate before every LLM call to prevent context overflow
+            self.conversation.truncate_if_needed(max_tokens=self.max_context_tokens)
+            
             messages = self.conversation.get_messages()
 
             # Get tools but don't add them to messages - pass separately to LLM
