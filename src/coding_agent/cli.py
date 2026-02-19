@@ -25,6 +25,8 @@ except Exception:
 # --- End early init ---
 
 from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import FormattedText
+from prompt_toolkit.styles import Style as PTStyle
 
 from coding_agent.agent import Agent
 from coding_agent.config import ConfigError, apply_cli_overrides
@@ -33,7 +35,7 @@ from coding_agent.llm import LLMClient
 from coding_agent.project_instructions import get_enhanced_system_prompt
 from coding_agent.renderer import Renderer
 from coding_agent.session import SessionManager
-from coding_agent.slash_commands import execute_command
+from coding_agent.slash_commands import SlashCommandCompleter, execute_command
 from coding_agent.system_prompt import SYSTEM_PROMPT
 
 import litellm
@@ -41,32 +43,24 @@ litellm.suppress_debug_info = True
 
 from coding_agent import __version__
 
-USER_PROMPT = "You   > "
+STYLED_PROMPT = FormattedText([
+    ("class:user", "You"),
+    ("class:arrow", " > "),
+])
 
-
-def print_banner() -> None:
-    """Print the Coding Agent banner."""
-    os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
-
-    try:
-        banner = f"""
-  ╔═══════════════════════════════════════════╗
-  ║          EMN CODING AGENT v{__version__}           ║
-  ║        AI-powered coding assistant        ║
-  ╚═══════════════════════════════════════════╝
-"""
-        click.echo(click.style(banner, fg="cyan", bold=True))
-    except UnicodeEncodeError:
-        click.echo(click.style(f"Coding Agent v{__version__}", fg="cyan", bold=True))
+PROMPT_STYLE = PTStyle.from_dict({
+    "user": "ansicyan bold",
+    "arrow": "ansigreen",
+})
 
 
 def _restore_conversation(conversation: ConversationManager, messages: list[dict]) -> int:
     """Restore conversation messages from session data.
-    
+
     Args:
         conversation: ConversationManager to populate
         messages: List of message dicts from session
-        
+
     Returns:
         Number of non-system messages restored
     """
@@ -85,7 +79,7 @@ def _restore_conversation(conversation: ConversationManager, messages: list[dict
             )
         else:
             conversation.add_message(msg["role"], msg.get("content", ""))
-    
+
     return len([m for m in messages if m.get("role") != "system"])
 
 
@@ -108,7 +102,10 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 @click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
 def main(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
-    print_banner()
+    os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
+
+    renderer = Renderer()
+    renderer.render_banner(__version__)
 
     try:
         config = load_config()
@@ -124,15 +121,16 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         click.echo(str(e), err=True)
         sys.exit(1)
 
-    click.echo(f"Model: {config.model}")
-    click.echo(f"API:   {config.api_base}")
-    if config.https_proxy:
-        click.echo(f"Proxy: {config.https_proxy}")
-    click.echo(f"Temp:  {config.temperature}")
-    click.echo(f"MaxTok: {config.max_output_tokens}")
-    click.echo(f"TopP:  {config.top_p}")
+    renderer.render_config({
+        "Model": config.model,
+        "API": config.api_base,
+        **({"Proxy": config.https_proxy} if config.https_proxy else {}),
+        "Temp": str(config.temperature),
+        "MaxTok": str(config.max_output_tokens),
+        "TopP": str(config.top_p),
+    })
     click.echo("")
-    
+
     try:
         llm_client = LLMClient(config)
         llm_client.verify_connection()
@@ -140,15 +138,14 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         click.echo(str(e), err=True)
         sys.exit(1)
 
-    renderer = Renderer()
-    renderer.print_info(f"Connected to LiteLLM")
+    renderer.print_info("Connected to LiteLLM")
 
     # Load project instructions lazily
     enhanced_prompt, loaded_files = _get_system_prompt()
 
     # Log loaded project instructions
     for path in loaded_files:
-        click.echo(f"Loaded project instructions from: {path}")
+        renderer.print_info(f"Loaded project instructions from: {path}")
 
     session_manager = SessionManager()
     session_data = None
@@ -180,13 +177,19 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
 
     click.echo(click.style("Type 'exit' to quit.\n", fg="green"))
 
+    # Slash command autocomplete
+    slash_completer = SlashCommandCompleter()
+
     # Try prompt_toolkit, fallback to stdin if it fails (e.g., in non-Windows console)
     try:
-        session = PromptSession()
-        input_func = lambda: session.prompt(USER_PROMPT)
+        session = PromptSession(
+            completer=slash_completer,
+            style=PROMPT_STYLE,
+        )
+        input_func = lambda: session.prompt(STYLED_PROMPT)
     except Exception:
         # Fallback for non-Windows console environments
-        input_func = lambda: input(USER_PROMPT.replace("You   > ", ""))
+        input_func = lambda: input("You > ")
 
     while True:
         try:
@@ -201,14 +204,18 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         text = text.strip()
         if not text:
             continue
-        
+
+        # Handle bare exit/quit commands
+        if text.lower() in ("exit", "quit"):
+            break
+
         # Check for slash commands
         should_continue = execute_command(text, conversation, session_manager, renderer, llm_client)
         if should_continue is False:
             break
         if should_continue is True:
             continue
-        
+
         # Regular message - create session if needed
         if session_data is None:
             session_data = session_manager.create_session(

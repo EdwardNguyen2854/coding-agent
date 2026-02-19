@@ -52,17 +52,15 @@ class Agent:
             # Get tools but don't add them to messages - pass separately to LLM
             tools = get_openai_tools()
 
-            full_text = ""
             try:
-                for delta in self.llm_client.send_message_stream(messages, tools=tools):
-                    print(delta, end="", flush=True)
-                    full_text += delta
+                with self.renderer.render_streaming_live() as display:
+                    display.start_thinking()
+                    for delta in self.llm_client.send_message_stream(messages, tools=tools):
+                        display.update(delta)
+                    full_text = display.full_text
             except Exception as e:
                 self.renderer.print_error(f"Error: {str(e)}")
                 return ""
-
-            if full_text.strip():
-                print()
 
             response = self.llm_client.last_response
             if response is None:
@@ -86,7 +84,7 @@ class Agent:
                 self._handle_tool_call(tc)
 
             self.consecutive_failures = 0
-            print("-" * 40)
+            self.renderer.render_separator()
 
     def _handle_tool_call(self, tool_call: Any) -> None:
         """Handle a single tool call.
@@ -143,7 +141,8 @@ class Agent:
             self.renderer.print_info("  denied")
             return
 
-        result = execute_tool(tool_name, arguments)
+        with self.renderer.status_spinner(f"  Running {tool_name}..."):
+            result = execute_tool(tool_name, arguments)
 
         if result.is_error:
             self.renderer.print_error(f"  error: {result.error}")

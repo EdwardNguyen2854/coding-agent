@@ -430,7 +430,7 @@ class TestCLIIntegration:
         runner = CliRunner()
         result = runner.invoke(main, ["--temperature", "0.7"])
         assert result.exit_code == 0
-        assert "Temp:  0.7" in result.output
+        assert "0.7" in result.output
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
@@ -450,7 +450,7 @@ class TestCLIIntegration:
         runner = CliRunner()
         result = runner.invoke(main, ["--max-output-tokens", "8192"])
         assert result.exit_code == 0
-        assert "MaxTok: 8192" in result.output
+        assert "8192" in result.output
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
@@ -470,7 +470,7 @@ class TestCLIIntegration:
         runner = CliRunner()
         result = runner.invoke(main, ["--top-p", "0.9"])
         assert result.exit_code == 0
-        assert "TopP:  0.9" in result.output
+        assert "0.9" in result.output
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
