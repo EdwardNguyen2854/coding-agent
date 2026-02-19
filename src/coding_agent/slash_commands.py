@@ -1,6 +1,6 @@
 """Slash command system for CLI."""
 
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from urllib.error import URLError
 from socket import timeout as socket_timeout
 
@@ -10,8 +10,12 @@ from rich.table import Table
 
 from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
+from coding_agent.project_instructions import find_git_root
 from coding_agent.renderer import Renderer
 from coding_agent.session import SessionManager
+
+if TYPE_CHECKING:
+    from coding_agent.agent import Agent
 
 
 class SlashCommand:
@@ -24,7 +28,7 @@ class SlashCommand:
         self.arg_required = arg_required
 
 
-def cmd_help(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
+def cmd_help(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Show help message."""
     table = Table(title="Available Commands", show_header=True, header_style="bold cyan")
     table.add_column("Command", style="cyan")
@@ -40,21 +44,21 @@ def cmd_help(args: str, conversation: ConversationManager, session_manager: Sess
     return True
 
 
-def cmd_clear(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
+def cmd_clear(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Clear conversation history."""
     conversation.clear()
     renderer.print_success("Conversation cleared.")
     return True
 
 
-def cmd_compact(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
+def cmd_compact(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Trigger conversation truncation."""
     conversation.truncate_if_needed(max_tokens=64000)
     renderer.print_success("Conversation compacted.")
     return True
 
 
-def cmd_sessions(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
+def cmd_sessions(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """List saved sessions."""
     sessions = session_manager.list()
 
@@ -80,13 +84,13 @@ def cmd_sessions(args: str, conversation: ConversationManager, session_manager: 
     return True
 
 
-def cmd_exit(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
+def cmd_exit(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Exit the session."""
     renderer.print_info("Goodbye!")
     return False
 
 
-def cmd_model(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
+def cmd_model(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Switch to a different model."""
     if not args:
         renderer.print_error("Command /model requires an argument.")
@@ -123,14 +127,121 @@ def cmd_model(args: str, conversation: ConversationManager, session_manager: Ses
     return True
 
 
+_AGENTS_MD_TEMPLATE = """\
+# AGENTS.md - Agent Instructions
+
+## Project Overview
+
+_Describe your project here._
+
+## Architecture
+
+_Describe the key components and their relationships._
+
+## Build & Test
+
+```bash
+# Install dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+
+# Run the app
+your-cli-command
+```
+
+## Code Style
+
+_Describe coding conventions and preferences._
+
+## Important Notes
+
+_Special instructions for the agent, e.g., files to avoid, patterns to follow._
+"""
+
+
+def cmd_init(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Create an AGENTS.md template in the current project root."""
+    from pathlib import Path
+
+    git_root = find_git_root()
+    target_dir = git_root if git_root else Path.cwd()
+    agents_md = target_dir / "AGENTS.md"
+
+    if agents_md.exists():
+        renderer.print_error(f"AGENTS.md already exists at {agents_md}")
+        return True
+
+    try:
+        agents_md.write_text(_AGENTS_MD_TEMPLATE, encoding="utf-8")
+        renderer.print_success(f"Created AGENTS.md at {agents_md}")
+    except OSError as e:
+        renderer.print_error(f"Failed to create AGENTS.md: {e}")
+
+    return True
+
+
 COMMANDS: dict[str, SlashCommand] = {
     "help": SlashCommand("help", cmd_help, "Show help message", False),
     "clear": SlashCommand("clear", cmd_clear, "Clear conversation history", False),
     "compact": SlashCommand("compact", cmd_compact, "Manually trigger conversation truncation", False),
     "sessions": SlashCommand("sessions", cmd_sessions, "List saved sessions", False),
     "model": SlashCommand("model", cmd_model, "Switch to a different model", True),
+    "init": SlashCommand("init", cmd_init, "Create AGENTS.md template in project root", False),
     "exit": SlashCommand("exit", cmd_exit, "Exit the session", False),
 }
+
+
+def register_skills(skills: dict[str, str], agent: "Agent") -> list[str]:
+    """Register skills from SKILL.md as dynamic slash commands.
+
+    Each skill becomes a slash command that runs its instructions through
+    the agent. Project skills override built-in commands with the same name.
+
+    Args:
+        skills: Mapping of skill name to instruction content.
+        agent: Agent instance used to execute skill prompts.
+
+    Returns:
+        List of registered skill names.
+    """
+    registered: list[str] = []
+
+    for name, content in skills.items():
+        if not name:
+            continue
+
+        # Capture skill content in a closure
+        def _make_handler(skill_content: str):
+            def handler(
+                args: str,
+                conversation: ConversationManager,
+                session_manager: SessionManager,
+                renderer: Renderer,
+                llm_client: LLMClient | None = None,
+                _agent: "Agent | None" = None,
+            ) -> bool:
+                prompt = skill_content
+                if args:
+                    prompt = f"{skill_content}\n\nAdditional context: {args}"
+                effective_agent = _agent or agent
+                if effective_agent is None:
+                    renderer.print_error("No agent available to run skill.")
+                    return True
+                effective_agent.run(prompt)
+                return True
+            return handler
+
+        COMMANDS[name] = SlashCommand(
+            name=name,
+            handler=_make_handler(content),
+            help_text=f"[skill] {content[:60].splitlines()[0] if content else name}",
+            arg_required=False,
+        )
+        registered.append(name)
+
+    return registered
 
 
 class SlashCommandCompleter(Completer):
@@ -183,6 +294,7 @@ def execute_command(
     session_manager: SessionManager,
     renderer: Renderer,
     llm_client: LLMClient | None = None,
+    agent: "Agent | None" = None,
 ) -> bool | None:
     """Execute a slash command if the input is one.
 
@@ -192,6 +304,7 @@ def execute_command(
         session_manager: SessionManager instance
         renderer: Renderer instance
         llm_client: LLMClient instance (optional, for commands that need it)
+        agent: Agent instance (optional, required for skill commands)
 
     Returns:
         True if command executed and session should continue
@@ -213,4 +326,4 @@ def execute_command(
         renderer.print_error(f"Command /{command_name} requires an argument.")
         return True
 
-    return cmd.handler(args, conversation, session_manager, renderer, llm_client)
+    return cmd.handler(args, conversation, session_manager, renderer, llm_client, agent)

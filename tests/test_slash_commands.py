@@ -8,9 +8,11 @@ from coding_agent.slash_commands import (
     COMMANDS,
     cmd_exit,
     cmd_help,
+    cmd_init,
     execute_command,
     is_slash_command,
     parse_command,
+    register_skills,
 )
 
 
@@ -209,3 +211,115 @@ class TestModelCommand:
 
             # Verify conversation was NOT cleared (history preserved)
             mock_conversation.clear.assert_not_called()
+
+
+class TestInitCommand:
+    """Tests for /init command."""
+
+    def test_init_command_registered(self):
+        """Init command is registered in COMMANDS."""
+        assert "init" in COMMANDS
+
+    def test_creates_agents_md(self, tmp_path, mock_conversation, mock_session_manager, mock_renderer):
+        """Init creates AGENTS.md when it does not exist."""
+        with patch("coding_agent.slash_commands.find_git_root", return_value=tmp_path):
+            result = cmd_init("", mock_conversation, mock_session_manager, mock_renderer)
+
+        assert result is True
+        agents_md = tmp_path / "AGENTS.md"
+        assert agents_md.exists()
+        content = agents_md.read_text()
+        assert "AGENTS.md" in content
+
+    def test_init_fails_if_file_exists(self, tmp_path, mock_conversation, mock_session_manager, mock_renderer):
+        """Init shows error when AGENTS.md already exists."""
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text("existing content")
+
+        with patch("coding_agent.slash_commands.find_git_root", return_value=tmp_path):
+            result = cmd_init("", mock_conversation, mock_session_manager, mock_renderer)
+
+        assert result is True
+        mock_renderer.print_error.assert_called_once()
+        # Original content should be preserved
+        assert agents_md.read_text() == "existing content"
+
+    def test_init_uses_cwd_when_no_git_root(self, tmp_path, mock_conversation, mock_session_manager, mock_renderer):
+        """Init falls back to cwd when no git root is found."""
+        with patch("coding_agent.slash_commands.find_git_root", return_value=None):
+            with patch("pathlib.Path.cwd", return_value=tmp_path):
+                result = cmd_init("", mock_conversation, mock_session_manager, mock_renderer)
+
+        assert result is True
+        assert (tmp_path / "AGENTS.md").exists()
+
+
+class TestRegisterSkills:
+    """Tests for register_skills function."""
+
+    def test_skills_registered_as_commands(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Skills from SKILL.md are registered in COMMANDS."""
+        mock_agent = MagicMock()
+        skills = {"myskill": "Do something useful."}
+
+        original_keys = set(COMMANDS.keys())
+        try:
+            registered = register_skills(skills, mock_agent)
+            assert "myskill" in COMMANDS
+            assert "myskill" in registered
+        finally:
+            # Clean up dynamic commands after test
+            for name in registered:
+                COMMANDS.pop(name, None)
+
+    def test_skill_command_runs_agent(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Invoking a skill command calls agent.run with skill content."""
+        mock_agent = MagicMock()
+        skills = {"testskill": "Test skill instructions."}
+
+        registered = register_skills(skills, mock_agent)
+        try:
+            result = execute_command(
+                "/testskill",
+                mock_conversation,
+                mock_session_manager,
+                mock_renderer,
+                agent=mock_agent,
+            )
+            assert result is True
+            mock_agent.run.assert_called_once()
+            call_args = mock_agent.run.call_args[0][0]
+            assert "Test skill instructions." in call_args
+        finally:
+            for name in registered:
+                COMMANDS.pop(name, None)
+
+    def test_skill_command_appends_user_args(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Extra args passed to a skill are appended to the prompt."""
+        mock_agent = MagicMock()
+        skills = {"checkskill": "Base instructions."}
+
+        registered = register_skills(skills, mock_agent)
+        try:
+            execute_command(
+                "/checkskill focus on security",
+                mock_conversation,
+                mock_session_manager,
+                mock_renderer,
+                agent=mock_agent,
+            )
+            call_args = mock_agent.run.call_args[0][0]
+            assert "Base instructions." in call_args
+            assert "focus on security" in call_args
+        finally:
+            for name in registered:
+                COMMANDS.pop(name, None)
+
+    def test_empty_skill_name_skipped(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Skills with empty names are not registered."""
+        mock_agent = MagicMock()
+        skills = {"": "Some content."}
+
+        registered = register_skills(skills, mock_agent)
+        assert "" not in COMMANDS
+        assert registered == []

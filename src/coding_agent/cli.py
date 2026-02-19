@@ -34,7 +34,8 @@ from coding_agent.llm import LLMClient
 from coding_agent.project_instructions import get_enhanced_system_prompt
 from coding_agent.renderer import Renderer
 from coding_agent.session import SessionManager
-from coding_agent.slash_commands import SlashCommandCompleter, execute_command
+from coding_agent.skills import load_skills
+from coding_agent.slash_commands import SlashCommandCompleter, execute_command, register_skills
 from coding_agent.system_prompt import SYSTEM_PROMPT
 
 import litellm
@@ -158,12 +159,20 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
     for path in loaded_files:
         renderer.print_info(f"Loaded project instructions from: {path}")
 
+
     session_manager = SessionManager()
     session_data = None
     conversation = ConversationManager(enhanced_prompt, model=config.model)
 
     # Create Agent instance
     agent = Agent(llm_client, conversation, renderer, config=config)
+
+    # Load skills from SKILL.md and register as slash commands
+    skills, skill_files = load_skills()
+    if skills:
+        register_skills(skills, agent)
+        for path in skill_files:
+            renderer.print_info(f"Loaded skills from: {path}")
 
     # Handle session resume
     if resume:
@@ -221,7 +230,7 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
             break
 
         # Check for slash commands
-        should_continue = execute_command(text, conversation, session_manager, renderer, llm_client)
+        should_continue = execute_command(text, conversation, session_manager, renderer, llm_client, agent)
         if should_continue is False:
             break
         if should_continue is True:
