@@ -10,9 +10,11 @@ from pydantic import ValidationError
 from coding_agent.config import (
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONFIG_FILE,
+    OLLAMA_DEFAULT_API_BASE,
     AgentConfig,
     ConfigError,
     apply_cli_overrides,
+    is_ollama_model,
     load_config,
 )
 
@@ -111,6 +113,48 @@ class TestAgentConfigModel:
         """Default config paths are correct."""
         assert DEFAULT_CONFIG_DIR == Path.home() / ".coding-agent"
         assert DEFAULT_CONFIG_FILE == Path.home() / ".coding-agent" / "config.yaml"
+
+
+class TestOllamaSupport:
+    """Ollama model auto-detection and defaults."""
+
+    def test_is_ollama_model_ollama_chat_prefix(self):
+        """is_ollama_model() recognises ollama_chat/ prefix."""
+        assert is_ollama_model("ollama_chat/llama3.2") is True
+
+    def test_is_ollama_model_ollama_prefix(self):
+        """is_ollama_model() recognises ollama/ prefix."""
+        assert is_ollama_model("ollama/llama3.2") is True
+
+    def test_is_ollama_model_false_for_other_models(self):
+        """is_ollama_model() returns False for non-Ollama models."""
+        assert is_ollama_model("litellm/gpt-4o") is False
+        assert is_ollama_model("openrouter/mistral") is False
+        assert is_ollama_model("gpt-4o") is False
+
+    def test_ollama_chat_model_defaults_api_base(self):
+        """AgentConfig auto-sets api_base for ollama_chat/ models."""
+        config = AgentConfig(model="ollama_chat/llama3.2")
+        assert config.api_base == OLLAMA_DEFAULT_API_BASE
+
+    def test_ollama_model_defaults_api_base(self):
+        """AgentConfig auto-sets api_base for ollama/ models."""
+        config = AgentConfig(model="ollama/mistral")
+        assert config.api_base == OLLAMA_DEFAULT_API_BASE
+
+    def test_ollama_explicit_api_base_not_overridden(self):
+        """Explicit api_base is preserved even for Ollama models."""
+        config = AgentConfig(model="ollama_chat/llama3.2", api_base="http://remote-ollama:11434")
+        assert config.api_base == "http://remote-ollama:11434"
+
+    def test_ollama_no_api_key_required(self):
+        """Ollama config works without api_key."""
+        config = AgentConfig(model="ollama_chat/llama3.2")
+        assert config.api_key is None
+
+    def test_ollama_default_api_base_constant(self):
+        """OLLAMA_DEFAULT_API_BASE points to local Ollama."""
+        assert OLLAMA_DEFAULT_API_BASE == "http://localhost:11434"
 
 
 class TestLoadConfig:

@@ -120,6 +120,12 @@ class TestCLI:
         assert "--model" in result.output
         assert "--api-base" in result.output
 
+    def test_ollama_option_in_help(self):
+        """--ollama flag appears in help output."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["--help"])
+        assert "--ollama" in result.output
+
     def test_model_option_accepted(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
         """AC #2: --model flag is recognized."""
         runner = CliRunner()
@@ -141,6 +147,46 @@ class TestCLI:
         renderer_instance = mock_renderer.return_value
         renderer_instance.render_banner.assert_called_once()
         renderer_instance.render_config.assert_called_once()
+
+
+class TestOllamaFlag:
+    """--ollama flag sets model and api_base for local Ollama."""
+
+    def test_ollama_flag_sets_ollama_chat_model(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+        """--ollama MODEL sets model to ollama_chat/MODEL."""
+        runner = CliRunner()
+        runner.invoke(main, ["--ollama", "llama3.2"])
+        # LLMClient should have been constructed with an ollama model
+        call_kwargs = mock_llm_client.call_args[0][0]  # first positional arg (config)
+        assert call_kwargs.model == "ollama_chat/llama3.2"
+
+    def test_ollama_flag_sets_default_api_base(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+        """--ollama MODEL sets api_base to http://localhost:11434."""
+        from coding_agent.config import OLLAMA_DEFAULT_API_BASE
+        runner = CliRunner()
+        runner.invoke(main, ["--ollama", "llama3.2"])
+        call_kwargs = mock_llm_client.call_args[0][0]
+        assert call_kwargs.api_base == OLLAMA_DEFAULT_API_BASE
+
+    def test_ollama_flag_with_explicit_api_base_uses_explicit(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+        """--ollama MODEL --api-base URL uses the explicit api-base."""
+        runner = CliRunner()
+        runner.invoke(main, ["--ollama", "llama3.2", "--api-base", "http://remote-ollama:11434"])
+        call_kwargs = mock_llm_client.call_args[0][0]
+        assert call_kwargs.api_base == "http://remote-ollama:11434"
+
+    def test_ollama_flag_with_full_prefix_preserved(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+        """--ollama ollama_chat/llama3.2 keeps the full prefix unchanged."""
+        runner = CliRunner()
+        runner.invoke(main, ["--ollama", "ollama_chat/llama3.2"])
+        call_kwargs = mock_llm_client.call_args[0][0]
+        assert call_kwargs.model == "ollama_chat/llama3.2"
+
+    def test_ollama_flag_exit_code_zero(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+        """--ollama flag runs successfully."""
+        runner = CliRunner()
+        result = runner.invoke(main, ["--ollama", "llama3.2"])
+        assert result.exit_code == 0
 
 
 class TestCLIConnectivity:

@@ -28,7 +28,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.styles import Style as PTStyle
 
 from coding_agent.agent import Agent
-from coding_agent.config import ConfigError, apply_cli_overrides
+from coding_agent.config import ConfigError, OLLAMA_DEFAULT_API_BASE, apply_cli_overrides
 from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
 from coding_agent.project_instructions import get_enhanced_system_prompt
@@ -99,9 +99,19 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 @click.option("--top-p", default=None, type=float, help="Override top_p (0.0-1.0)")
 @click.option("--resume", is_flag=True, help="Resume the most recent session")
 @click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
-def main(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None) -> None:
+@click.option("--ollama", "ollama_model", default=None, metavar="MODEL",
+              help="Use a local Ollama model, e.g. llama3.2 or qwen2.5-coder:7b")
+def main(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
+
+    # Resolve --ollama shorthand into model + api_base overrides
+    if ollama_model:
+        if model is None:
+            prefix = "" if ollama_model.startswith(("ollama/", "ollama_chat/")) else "ollama_chat/"
+            model = f"{prefix}{ollama_model}"
+        if api_base is None:
+            api_base = OLLAMA_DEFAULT_API_BASE
 
     renderer = Renderer()
     renderer.render_banner(__version__)
@@ -137,7 +147,9 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         click.echo(str(e), err=True)
         sys.exit(1)
 
-    renderer.print_info("Connected to LiteLLM")
+    from coding_agent.config import is_ollama_model
+    backend = "Ollama" if is_ollama_model(config.model) else "LiteLLM"
+    renderer.print_info(f"Connected to {backend}")
 
     # Load project instructions lazily
     enhanced_prompt, loaded_files = _get_system_prompt()

@@ -3,10 +3,17 @@
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 DEFAULT_CONFIG_DIR = Path.home() / ".coding-agent"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.yaml"
+
+OLLAMA_DEFAULT_API_BASE = "http://localhost:11434"
+
+
+def is_ollama_model(model: str) -> bool:
+    """Return True if the model string uses the Ollama provider prefix."""
+    return model.startswith(("ollama/", "ollama_chat/"))
 
 
 class ConfigError(Exception):
@@ -21,6 +28,16 @@ class AgentConfig(BaseModel):
     model: str
     api_base: str
     api_key: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_ollama_defaults(cls, values: dict) -> dict:
+        """Auto-set api_base for Ollama models when not explicitly provided."""
+        if isinstance(values, dict) and "api_base" not in values:
+            if is_ollama_model(values.get("model", "")):
+                values = dict(values)
+                values["api_base"] = OLLAMA_DEFAULT_API_BASE
+        return values
     https_proxy: str | None = None
 
     # Model sampling parameters
@@ -71,10 +88,12 @@ def load_config(config_path: Path | None = None) -> AgentConfig:
         raise ConfigError(
             f"Configuration file not found.\n\n"
             f"Expected location: {path}\n\n"
-            f"Create the file with at least these required fields:\n"
+            f"For LiteLLM proxy / OpenAI-compatible APIs:\n"
             f"  model: litellm/gpt-4o\n"
-            f"  api_base: http://localhost:4000\n"
-            f"  https_proxy: http://proxy.example.com:8080  # optional"
+            f"  api_base: http://localhost:4000\n\n"
+            f"For local Ollama models (api_base defaults to {OLLAMA_DEFAULT_API_BASE}):\n"
+            f"  model: ollama_chat/llama3.2\n\n"
+            f"Optional fields: api_key, https_proxy"
         )
 
     raw = path.read_text(encoding="utf-8")
@@ -84,10 +103,11 @@ def load_config(config_path: Path | None = None) -> AgentConfig:
         raise ConfigError(
             f"Invalid configuration in {path}\n\n"
             f"  Config file is empty or not a valid YAML mapping.\n\n"
-            f"Required fields:\n"
+            f"For LiteLLM proxy / OpenAI-compatible APIs:\n"
             f"  model: litellm/gpt-4o\n"
-            f"  api_base: http://localhost:4000\n"
-            f"  https_proxy: http://proxy.example.com:8080  # optional"
+            f"  api_base: http://localhost:4000\n\n"
+            f"For local Ollama models (api_base defaults to {OLLAMA_DEFAULT_API_BASE}):\n"
+            f"  model: ollama_chat/llama3.2"
         )
 
     try:

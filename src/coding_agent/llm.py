@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import litellm
 
-from coding_agent.config import AgentConfig
+from coding_agent.config import AgentConfig, is_ollama_model
 from coding_agent.tools import get_openai_tools
 
 
@@ -49,6 +49,16 @@ class LLMClient:
                 f"Check your api_key in ~/.coding-agent/config.yaml"
             ) from None
         if isinstance(error, litellm.APIConnectionError):
+            if is_ollama_model(self.model):
+                model_name = self.model.split("/", 1)[-1]
+                raise ConnectionError(
+                    f"Cannot connect to Ollama.\n\n"
+                    f"  Server: {self.api_base}\n\n"
+                    f"Suggestions:\n"
+                    f"  1. Start Ollama:     ollama serve\n"
+                    f"  2. Pull the model:   ollama pull {model_name}\n"
+                    f"  3. Verify api_base in ~/.coding-agent/config.yaml"
+                ) from None
             raise ConnectionError(
                 f"Cannot connect to LiteLLM server.\n\n"
                 f"  Server: {self.api_base}\n"

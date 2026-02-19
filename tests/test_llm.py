@@ -171,6 +171,60 @@ class TestVerifyConnectionUnreachable:
             client.verify_connection()
 
 
+class TestOllamaConnectionError:
+    """Ollama-specific APIConnectionError gives actionable hints."""
+
+    @pytest.fixture()
+    def ollama_config(self):
+        return AgentConfig(model="ollama_chat/llama3.2")
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_ollama_error_mentions_ollama_serve(self, mock_completion, ollama_config):
+        mock_completion.side_effect = litellm.APIConnectionError(
+            message="Connection refused",
+            model="ollama_chat/llama3.2",
+            llm_provider="ollama",
+        )
+        client = LLMClient(ollama_config)
+        with pytest.raises(ConnectionError, match="ollama serve"):
+            client.verify_connection()
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_ollama_error_mentions_ollama_pull(self, mock_completion, ollama_config):
+        mock_completion.side_effect = litellm.APIConnectionError(
+            message="Connection refused",
+            model="ollama_chat/llama3.2",
+            llm_provider="ollama",
+        )
+        client = LLMClient(ollama_config)
+        with pytest.raises(ConnectionError, match="ollama pull llama3.2"):
+            client.verify_connection()
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_ollama_error_does_not_mention_litellm(self, mock_completion, ollama_config):
+        mock_completion.side_effect = litellm.APIConnectionError(
+            message="Connection refused",
+            model="ollama_chat/llama3.2",
+            llm_provider="ollama",
+        )
+        client = LLMClient(ollama_config)
+        with pytest.raises(ConnectionError) as exc_info:
+            client.verify_connection()
+        assert "LiteLLM server" not in str(exc_info.value)
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_non_ollama_error_does_not_mention_ollama(self, mock_completion, config):
+        mock_completion.side_effect = litellm.APIConnectionError(
+            message="Connection refused",
+            model="litellm/gpt-4o",
+            llm_provider="openai",
+        )
+        client = LLMClient(config)
+        with pytest.raises(ConnectionError) as exc_info:
+            client.verify_connection()
+        assert "ollama serve" not in str(exc_info.value)
+
+
 class TestVerifyConnectionAuthError:
     """AC #3: Auth error is distinguishable from connectivity failure."""
 
