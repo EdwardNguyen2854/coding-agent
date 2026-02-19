@@ -9,7 +9,6 @@ import click
 try:
     import truststore
     truststore.inject_into_ssl()
-    click.echo("truststore: using OS certificate store")
 except Exception:
     pass
 
@@ -129,7 +128,7 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         "MaxTok": str(config.max_output_tokens),
         "TopP": str(config.top_p),
     })
-    click.echo("")
+    renderer.console.print()
 
     try:
         llm_client = LLMClient(config)
@@ -160,22 +159,22 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         if loaded_session:
             session_data = loaded_session
             msg_count = _restore_conversation(conversation, loaded_session.get("messages", []))
-            click.echo(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
+            renderer.print_info(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
             agent.set_session(session_manager, session_data)
         else:
-            click.echo(click.style("No previous sessions found. Starting a new session.", fg="yellow"))
+            renderer.print_info("No previous sessions found. Starting a new session.")
     elif session_id:
         loaded_session = session_manager.load(session_id)
         if loaded_session:
             session_data = loaded_session
             msg_count = _restore_conversation(conversation, loaded_session.get("messages", []))
-            click.echo(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
+            renderer.print_info(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
             agent.set_session(session_manager, session_data)
         else:
-            click.echo(click.style(f"Session not found: {session_id}", fg="red"), err=True)
+            renderer.print_error(f"Session not found: {session_id}")
             sys.exit(1)
 
-    click.echo(click.style("Type 'exit' to quit.\n", fg="green"))
+    renderer.print_info("Type 'exit' to quit.\n")
 
     # Slash command autocomplete
     slash_completer = SlashCommandCompleter()
@@ -195,7 +194,7 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
         try:
             text = input_func()
         except KeyboardInterrupt:
-            click.echo("\nUse Ctrl+D or type 'exit' to quit.")
+            renderer.print_info("\nUse Ctrl+D or type 'exit' to quit.")
             continue
         except EOFError:
             conversation.clear()
@@ -223,7 +222,7 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
                 model=config.model,
                 messages=conversation.get_messages()
             )
-            click.echo(f"Session created: {session_data['title']}")
+            renderer.print_info(f"Session created: {session_data['title']}")
             agent.set_session(session_manager, session_data)
 
         # Delegate to Agent for ReAct loop

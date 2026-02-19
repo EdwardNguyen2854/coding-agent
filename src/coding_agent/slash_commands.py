@@ -1,6 +1,5 @@
 """Slash command system for CLI."""
 
-import click
 from typing import Callable
 from urllib.error import URLError
 from socket import timeout as socket_timeout
@@ -44,14 +43,14 @@ def cmd_help(args: str, conversation: ConversationManager, session_manager: Sess
 def cmd_clear(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
     """Clear conversation history."""
     conversation.clear()
-    click.echo(click.style("Conversation cleared.", fg="green"))
+    renderer.print_success("Conversation cleared.")
     return True
 
 
 def cmd_compact(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
     """Trigger conversation truncation."""
     conversation.truncate_if_needed(max_tokens=64000)
-    click.echo(click.style("Conversation compacted.", fg="green"))
+    renderer.print_success("Conversation compacted.")
     return True
 
 
@@ -60,7 +59,7 @@ def cmd_sessions(args: str, conversation: ConversationManager, session_manager: 
     sessions = session_manager.list()
 
     if not sessions:
-        click.echo(click.style("No saved sessions.", fg="yellow"))
+        renderer.print_info("No saved sessions.")
         return True
 
     table = Table(title="Saved Sessions", show_header=True, header_style="bold cyan")
@@ -83,18 +82,18 @@ def cmd_sessions(args: str, conversation: ConversationManager, session_manager: 
 
 def cmd_exit(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
     """Exit the session."""
-    click.echo(click.style("Goodbye!", fg="cyan"))
+    renderer.print_info("Goodbye!")
     return False
 
 
 def cmd_model(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None) -> bool:
     """Switch to a different model."""
     if not args:
-        click.echo(click.style("Command /model requires an argument.", fg="red"))
+        renderer.print_error("Command /model requires an argument.")
         return True
 
     if llm_client is None:
-        click.echo(click.style("Model switching is not available in this context.", fg="red"))
+        renderer.print_error("Model switching is not available in this context.")
         return True
 
     model_name = args.strip()
@@ -111,16 +110,16 @@ def cmd_model(args: str, conversation: ConversationManager, session_manager: Ses
             timeout=10,
         )
     except (URLError, socket_timeout, TimeoutError):
-        click.echo(click.style(f"Error: Model '{model_name}' validation timed out. Please try again.", fg="red"))
+        renderer.print_error(f"Error: Model '{model_name}' validation timed out. Please try again.")
         return True
     except Exception as e:
         # Use generic error message to avoid exposing sensitive info (API keys, rate limits, etc.)
-        click.echo(click.style(f"Error: Model '{model_name}' is not available or not accessible.", fg="red"))
+        renderer.print_error(f"Error: Model '{model_name}' is not available or not accessible.")
         return True
 
     # Model is valid - switch to it
     llm_client.model = model_name
-    click.echo(click.style(f"Switched to model: {model_name}", fg="green"))
+    renderer.print_success(f"Switched to model: {model_name}")
     return True
 
 
@@ -205,13 +204,13 @@ def execute_command(
     command_name, args = parse_command(text)
 
     if command_name not in COMMANDS:
-        click.echo(click.style(f"Unknown command: /{command_name}. Type /help for available commands.", fg="red"))
+        renderer.print_error(f"Unknown command: /{command_name}. Type /help for available commands.")
         return True
 
     cmd = COMMANDS[command_name]
 
     if cmd.arg_required and not args:
-        click.echo(click.style(f"Command /{command_name} requires an argument.", fg="red"))
+        renderer.print_error(f"Command /{command_name} requires an argument.")
         return True
 
     return cmd.handler(args, conversation, session_manager, renderer, llm_client)

@@ -164,7 +164,7 @@ class TestRenderBanner:
 
     @patch("coding_agent.renderer.Console")
     def test_render_banner_prints_panel(self, mock_console_cls):
-        """render_banner() prints a Rich Panel with version."""
+        """render_banner() prints a slim Rule with version."""
         mock_console = MagicMock()
         mock_console_cls.return_value = mock_console
         renderer = Renderer()
@@ -173,7 +173,8 @@ class TestRenderBanner:
 
         mock_console.print.assert_called_once()
         call_arg = mock_console.print.call_args.args[0]
-        assert isinstance(call_arg, Panel)
+        assert isinstance(call_arg, Rule)
+        assert "1.0.0" in str(call_arg.title)
 
 
 class TestRenderConfig:
@@ -181,8 +182,7 @@ class TestRenderConfig:
 
     @patch("coding_agent.renderer.Console")
     def test_render_config_prints_table(self, mock_console_cls):
-        """render_config() prints a styled table with config items."""
-        from rich.table import Table
+        """render_config() prints an inline dim line with config items."""
         mock_console = MagicMock()
         mock_console_cls.return_value = mock_console
         renderer = Renderer()
@@ -191,7 +191,8 @@ class TestRenderConfig:
 
         mock_console.print.assert_called_once()
         call_arg = mock_console.print.call_args.args[0]
-        assert isinstance(call_arg, Table)
+        assert "Model: gpt-4" in call_arg
+        assert "API: http://localhost:4000" in call_arg
 
 
 class TestRenderStreamingLive:
@@ -290,7 +291,7 @@ class TestRenderToolPanel:
 
     @patch("coding_agent.renderer.Console")
     def test_render_tool_panel_with_args(self, mock_console_cls):
-        """render_tool_panel() displays tool name and arguments."""
+        """render_tool_panel() displays tool name and arguments inline."""
         mock_console = MagicMock()
         mock_console_cls.return_value = mock_console
         renderer = Renderer()
@@ -298,9 +299,11 @@ class TestRenderToolPanel:
         tool_args = {"path": "/test/file.py", "content": "print('hello')"}
         renderer.render_tool_panel("file_write", tool_args)
 
-        assert mock_console.print.call_count == 1
-        call_arg = mock_console.print.call_args.args[0]
-        assert isinstance(call_arg, Panel)
+        # 1 line for tool name + 1 line per argument
+        assert mock_console.print.call_count == 1 + len(tool_args)
+        # First call contains the tool name
+        first_call_arg = mock_console.print.call_args_list[0].args[0]
+        assert "file_write" in first_call_arg
 
     @patch("coding_agent.renderer.Console")
     def test_render_tool_panel_empty_args(self, mock_console_cls):
@@ -319,7 +322,8 @@ class TestRenderDiffPreview:
 
     @patch("coding_agent.renderer.Console")
     def test_render_diff_preview_shows_changes(self, mock_console_cls):
-        """render_diff_preview() displays before/after with +/- markers."""
+        """render_diff_preview() displays unified diff with Syntax."""
+        from rich.syntax import Syntax
         mock_console = MagicMock()
         mock_console_cls.return_value = mock_console
         renderer = Renderer()
@@ -330,7 +334,7 @@ class TestRenderDiffPreview:
 
         assert mock_console.print.call_count == 1
         call_arg = mock_console.print.call_args.args[0]
-        assert isinstance(call_arg, Panel)
+        assert isinstance(call_arg, Syntax)
 
     @patch("coding_agent.renderer.Console")
     def test_render_diff_preview_empty_content(self, mock_console_cls):

@@ -128,7 +128,7 @@ class Agent:
                         # Apply the replacement to show what will change
                         if old_string in current_content:
                             new_content = current_content.replace(old_string, new_string, 1)
-                            self.renderer.render_diff_preview(current_content, new_content)
+                            self.renderer.render_diff_preview(current_content, new_content, file_path=path)
                 except Exception:
                     pass  # Silently skip diff if file cannot be read
 
@@ -138,7 +138,7 @@ class Agent:
                 "output": "",
             }
             self.conversation.add_message("tool", json.dumps(denial_result), tool_call_id=tool_id)
-            self.renderer.print_info("  denied")
+            self.renderer.print_info("  ✗ denied")
             return
 
         with self.renderer.status_spinner(f"  Running {tool_name}..."):
@@ -149,7 +149,7 @@ class Agent:
             tool_result_content = json.dumps({"error": result.error, "output": truncate_output(result.output)})
             self.consecutive_failures += 1
         else:
-            self.renderer.print_info("  done")
+            self.renderer.print_success("  ✓ done")
             tool_result_content = truncate_output(result.output)
             if result.error:
                 tool_result_content = json.dumps({"error": result.error, "output": truncate_output(result.output)})

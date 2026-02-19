@@ -263,7 +263,9 @@ class TestREPLLoop:
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert result.exit_code == 0
-        assert "Ctrl+D" in result.output
+        # Hint is printed via renderer.print_info (mocked), not click.echo
+        calls = [str(c) for c in mock_renderer.return_value.print_info.call_args_list]
+        assert any("Ctrl+D" in c for c in calls)
 
     def test_empty_input_skipped(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
         """Empty input is skipped without sending to LLM."""
