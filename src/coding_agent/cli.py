@@ -39,7 +39,7 @@ from coding_agent.system_prompt import SYSTEM_PROMPT
 import litellm
 litellm.suppress_debug_info = True
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 
 USER_PROMPT = "You   > "
 

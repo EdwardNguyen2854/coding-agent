@@ -71,13 +71,14 @@ class Agent:
                 self._save_session()
                 return assistant_message or ""
 
+            # Add assistant message with tool_calls BEFORE tool results
+            self.conversation.add_assistant_tool_call(
+                assistant_message or "",
+                [{"id": tc.id, "name": tc.function.name, "arguments": tc.function.arguments} for tc in tool_calls]
+            )
+
             for tc in tool_calls:
                 self._handle_tool_call(tc)
-
-            self.conversation.add_message(
-                "assistant",
-                assistant_message or "",
-            )
 
             self.consecutive_failures = 0
             print("-" * 40)
