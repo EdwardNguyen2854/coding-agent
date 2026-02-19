@@ -26,6 +26,9 @@ class LLMClient:
         self.model = config.model
         self.api_base = config.api_base
         self.api_key = config.api_key
+        self.temperature = config.temperature
+        self.max_output_tokens = config.max_output_tokens
+        self.top_p = config.top_p
         self.last_response = None
 
     def _handle_llm_error(self, error: Exception) -> None:
@@ -96,11 +99,13 @@ class LLMClient:
                 api_key=self.api_key,
                 max_tokens=1,
                 timeout=10,
+                temperature=self.temperature,
+                top_p=self.top_p,
             )
         except Exception as e:
             self._handle_llm_error(e)
 
-    def send_message_stream(self, messages: list[dict]) -> Generator[str, None, LLMResponse]:
+    def send_message_stream(self, messages: list[dict], tools: list[dict] | None = None) -> Generator[str, None, LLMResponse]:
         """Stream a completion response, yielding text deltas.
 
         Yields text content as it arrives. After the generator is exhausted,
@@ -123,7 +128,10 @@ class LLMClient:
                 api_key=self.api_key,
                 stream=True,
                 timeout=300,
-                tools=get_openai_tools(),
+                tools=tools,
+                temperature=self.temperature,
+                max_tokens=self.max_output_tokens,
+                top_p=self.top_p,
             )
             for chunk in response_stream:
                 chunks.append(chunk)

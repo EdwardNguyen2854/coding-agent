@@ -102,6 +102,26 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["timeout"] == 10
 
+    @patch("coding_agent.llm.litellm.completion")
+    def test_passes_temperature(self, mock_completion, config):
+        """AC: temperature is passed to LiteLLM."""
+        mock_completion.return_value = MagicMock()
+        config.temperature = 0.7
+        client = LLMClient(config)
+        client.verify_connection()
+        call_kwargs = mock_completion.call_args[1]
+        assert call_kwargs["temperature"] == 0.7
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_passes_top_p(self, mock_completion, config):
+        """AC: top_p is passed to LiteLLM."""
+        mock_completion.return_value = MagicMock()
+        config.top_p = 0.9
+        client = LLMClient(config)
+        client.verify_connection()
+        call_kwargs = mock_completion.call_args[1]
+        assert call_kwargs["top_p"] == 0.9
+
 
 class TestVerifyConnectionUnreachable:
     """AC #2: Unreachable server produces clear error with URL and suggestions."""
@@ -500,6 +520,45 @@ class TestSendMessageStreamParams:
         list(client.send_message_stream(sample_messages))
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["timeout"] == 300
+
+    @patch("coding_agent.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.llm.litellm.completion")
+    def test_passes_temperature_stream(self, mock_completion, mock_builder, config, sample_messages):
+        """AC: temperature is passed to LiteLLM in streaming."""
+        mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
+        mock_builder.return_value = MagicMock()
+        config.temperature = 0.7
+
+        client = LLMClient(config)
+        list(client.send_message_stream(sample_messages))
+        call_kwargs = mock_completion.call_args[1]
+        assert call_kwargs["temperature"] == 0.7
+
+    @patch("coding_agent.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.llm.litellm.completion")
+    def test_passes_max_tokens_stream(self, mock_completion, mock_builder, config, sample_messages):
+        """AC: max_output_tokens is passed to LiteLLM in streaming."""
+        mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
+        mock_builder.return_value = MagicMock()
+        config.max_output_tokens = 8192
+
+        client = LLMClient(config)
+        list(client.send_message_stream(sample_messages))
+        call_kwargs = mock_completion.call_args[1]
+        assert call_kwargs["max_tokens"] == 8192
+
+    @patch("coding_agent.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.llm.litellm.completion")
+    def test_passes_top_p_stream(self, mock_completion, mock_builder, config, sample_messages):
+        """AC: top_p is passed to LiteLLM in streaming."""
+        mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
+        mock_builder.return_value = MagicMock()
+        config.top_p = 0.9
+
+        client = LLMClient(config)
+        list(client.send_message_stream(sample_messages))
+        call_kwargs = mock_completion.call_args[1]
+        assert call_kwargs["top_p"] == 0.9
 
 
 class TestSendMessageStreamErrors:

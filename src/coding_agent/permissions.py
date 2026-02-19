@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+from prompt_toolkit import prompt as pt_prompt
+
 
 DESTRUCTIVE_PATTERNS = [
     r"rm\s+-rf\s+",
@@ -85,7 +87,14 @@ class PermissionSystem:
             self.renderer.print_info(f"\nTool: {tool_name}")
             self.renderer.print_info(f"Parameters: {params}")
 
-        response = input(f"Allow {tool_name}? [Y/n]: ").strip().lower()
+        styled_prompt = [
+            ("ansibrightcyan", f"Allow {tool_name}? "),
+            ("", "[Y/n]: "),
+        ]
+        try:
+            response = pt_prompt(styled_prompt).strip().lower()
+        except Exception:
+            response = input(f"Allow {tool_name}? [Y/n]: ").strip().lower()
         if response in ("", "y", "yes"):
             self.approve(tool_name, params)
             return True
@@ -105,9 +114,17 @@ class PermissionSystem:
             self.renderer.print_error("\n⚠️  WARNING: Potentially destructive command!")
             self.renderer.print_error(f"Tool: {tool_name}")
             self.renderer.print_error(f"Parameters: {params}")
+        else:
+            print("\n⚠️  WARNING: This command may delete or overwrite files!")
 
-        print("\n⚠️  WARNING: This command may delete or overwrite files!")
-        response = input(f"Allow {tool_name}? [Y/n]: ").strip().lower()
+        styled_prompt = [
+            ("ansired bold", f"Allow {tool_name}? "),
+            ("ansibrightcyan", "[Y/n]: "),
+        ]
+        try:
+            response = pt_prompt(styled_prompt).strip().lower()
+        except Exception:
+            response = input(f"Allow {tool_name}? [Y/n]: ").strip().lower()
         if response in ("", "y", "yes"):
             return True
         return False

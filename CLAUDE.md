@@ -1,4 +1,4 @@
-# AGENTS.md - Agent Instructions for Coding-Agent
+# CLAUDE.md - Agent Instructions for Coding-Agent
 
 This document is for coding agents operating in this repository.
 
@@ -176,3 +176,9 @@ pytest tests/test_config.py::TestLoadConfig::test_missing_config_file_raises_err
 - Keep testability high; add or update tests with behavior changes.
 - Preserve REPL conversation-history behavior in `cli.py`.
 - Preserve streaming behavior and error translation in `llm.py`.
+
+## Git Operations
+
+- **Always ask before commit** - Never commit changes without explicit user approval.
+- **Always ask before push** - Never push to remote without explicit user approval.
+- **Always ask before bump version** - Never bump version (e.g., via `bumpver` or manual `pyproject.toml` edit) without explicit user approval.
