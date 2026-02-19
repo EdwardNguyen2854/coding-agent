@@ -1,7 +1,6 @@
 """LiteLLM client wrapper - connectivity verification and LLM communication."""
 
 import json
-import traceback
 from collections.abc import Generator
 from dataclasses import dataclass, field
 
@@ -73,12 +72,18 @@ class LLMClient:
                 f"  Error: {error.message}\n\n"
                 f"Check your LiteLLM server configuration and logs."
             ) from None
-        tb = traceback.format_exception(type(error), error, error.__traceback__)
+        if isinstance(error, litellm.BadRequestError):
+            raise ConnectionError(
+                f"Model rejected the request.\n\n"
+                f"  Server: {self.api_base}\n"
+                f"  Error: {error}\n\n"
+                f"The model may not support tool calls or this message format.\n"
+                f"Try switching models with /model <name>."
+            ) from None
         raise ConnectionError(
-            f"Unexpected error connecting to LiteLLM server.\n\n"
+            f"Unexpected error from LiteLLM.\n\n"
             f"  Server: {self.api_base}\n"
-            f"  Error: {type(error).__name__}: {error}\n\n"
-            f"Full traceback:\n{''.join(tb)}"
+            f"  Error: {type(error).__name__}: {error}"
         ) from None
 
     def verify_connection(self) -> None:

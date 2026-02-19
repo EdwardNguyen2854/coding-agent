@@ -289,8 +289,46 @@ class TestVerifyConnectionServerError:
             client.verify_connection()
 
 
+class TestVerifyConnectionBadRequestError:
+    """BadRequestError (e.g. provider rejects message format) is handled cleanly."""
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_bad_request_raises_connection_error(self, mock_completion, config):
+        mock_completion.side_effect = litellm.BadRequestError(
+            message="Unrecognized chat message.",
+            model="openrouter/stepfun/step-3.5-flash:free",
+            llm_provider="openrouter",
+        )
+        client = LLMClient(config)
+        with pytest.raises(ConnectionError, match="rejected the request"):
+            client.verify_connection()
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_bad_request_message_contains_hint(self, mock_completion, config):
+        mock_completion.side_effect = litellm.BadRequestError(
+            message="Unrecognized chat message.",
+            model="openrouter/stepfun/step-3.5-flash:free",
+            llm_provider="openrouter",
+        )
+        client = LLMClient(config)
+        with pytest.raises(ConnectionError, match="/model"):
+            client.verify_connection()
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_bad_request_no_traceback_in_message(self, mock_completion, config):
+        mock_completion.side_effect = litellm.BadRequestError(
+            message="Unrecognized chat message.",
+            model="openrouter/stepfun/step-3.5-flash:free",
+            llm_provider="openrouter",
+        )
+        client = LLMClient(config)
+        with pytest.raises(ConnectionError) as exc_info:
+            client.verify_connection()
+        assert "Traceback" not in str(exc_info.value)
+
+
 class TestVerifyConnectionUnexpectedException:
-    """Unexpected exceptions are caught gracefully."""
+    """Unexpected exceptions are caught gracefully without leaking tracebacks."""
 
     @patch("coding_agent.llm.litellm.completion")
     def test_unexpected_error_raises_connection_error(self, mock_completion, config):
@@ -312,6 +350,14 @@ class TestVerifyConnectionUnexpectedException:
         client = LLMClient(config)
         with pytest.raises(ConnectionError, match="KeyError"):
             client.verify_connection()
+
+    @patch("coding_agent.llm.litellm.completion")
+    def test_unexpected_error_no_traceback_in_message(self, mock_completion, config):
+        mock_completion.side_effect = RuntimeError("boom")
+        client = LLMClient(config)
+        with pytest.raises(ConnectionError) as exc_info:
+            client.verify_connection()
+        assert "Traceback" not in str(exc_info.value)
 
 
 class TestVerifyConnectionApiKeySecurity:
