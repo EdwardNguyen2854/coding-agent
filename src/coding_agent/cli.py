@@ -12,7 +12,7 @@ try:
 except Exception:
     pass
 
-from coding_agent.config import load_config
+from coding_agent.config import load_config, DEFAULT_SKILLS, SkillsConfig, SkillSetting, DEFAULT_CONFIG_FILE
 _early_config = None
 try:
     _early_config = load_config()
@@ -91,7 +91,107 @@ def _get_system_prompt() -> tuple[str, list[str]]:
     return get_enhanced_system_prompt(SYSTEM_PROMPT)
 
 
-@click.command()
+@click.group(invoke_without_command=True)
+@click.pass_context
+def cli(ctx):
+    """Coding-Agent CLI."""
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(run)
+
+
+@cli.command("skills")
+@click.argument('choice', required=False, default='')
+def skills(choice):
+    """Configure skills (tick/untick which skills to enable).
+    
+    Usage: coding-agent skills [numbers]
+    Examples:
+        coding-agent skills          # Show all skills
+        coding-agent skills 1        # Toggle skill #1
+        coding-agent skills 1,3,5    # Toggle skills 1, 3, and 5
+        coding-agent skills all      # Enable all skills
+        coding-agent skills none     # Disable all skills
+    """
+    import yaml
+    from rich.console import Console
+    from rich.table import Table
+    from rich import box
+    
+    console = Console()
+    config = load_config()
+    current_skills = config.skills
+    
+    def render_table(selected_indices: list[int] | None = None):
+        table = Table(title="Skills Configuration", box=box.ROUNDED, show_lines=True)
+        table.add_column("#", style="cyan", width=4)
+        table.add_column("Skill", style="bold")
+        table.add_column("Enabled", justify="center", width=8)
+        
+        enabled_count = sum(1 for s in current_skills.skills if s.enabled)
+        
+        for i, skill in enumerate(current_skills.skills, 1):
+            is_enabled = skill.enabled
+            is_selected = selected_indices and i in selected_indices
+            
+            if is_selected:
+                status = "[T]"
+            elif is_enabled:
+                status = "[x]"
+            else:
+                status = "[ ]"
+            
+            style = "green bold" if is_enabled else "dim"
+            table.add_row(
+                str(i),
+                skill.name,
+                status,
+                style=style
+            )
+        
+        console.print(table)
+        console.print(f"\n{enabled_count}/{len(current_skills.skills)} skills enabled")
+        console.print("[dim]Usage: coding-agent skills 1,3,5  (toggle)[/dim]")
+    
+    choice = choice.strip() if choice else ''
+    
+    if not choice:
+        render_table()
+        return
+    
+    if choice.lower() == 'q' or choice.lower() == 'quit':
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+    
+    indices: list[int] = []
+    
+    if choice.lower() == 'all':
+        for s in current_skills.skills:
+            s.enabled = True
+    elif choice.lower() == 'none':
+        for s in current_skills.skills:
+            s.enabled = False
+    else:
+        for part in choice.split(','):
+            part = part.strip()
+            if part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(current_skills.skills):
+                    indices.append(idx + 1)
+                    current_skills.skills[idx].enabled = not current_skills.skills[idx].enabled
+    
+    config_data = config.model_dump()
+    config_data['skills'] = {'skills': [s.model_dump() for s in current_skills.skills]}
+    
+    DEFAULT_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(DEFAULT_CONFIG_FILE, 'w') as f:
+        yaml.dump(config_data, f, default_flow_style=False)
+    
+    console.print("\n[green]Configuration saved![/green]\n")
+    render_table(indices if indices else None)
+    console.print("[dim]Examples: coding-agent skills all / coding-agent skills none[/dim]")
+
+
+@cli.command()
 @click.version_option(version=__version__, prog_name="coding-agent")
 @click.option("--model", default=None, help="Override LLM model (e.g., litellm/gpt-4o)")
 @click.option("--api-base", default=None, help="Override LiteLLM API base URL")
@@ -102,7 +202,7 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 @click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
 @click.option("--ollama", "ollama_model", default=None, metavar="MODEL",
               help="Use a local Ollama model, e.g. llama3.2 or qwen2.5-coder:7b")
-def main(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None) -> None:
+def run(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
 
@@ -170,9 +270,14 @@ def main(model: str | None, api_base: str | None, temperature: float | None, max
     # Load skills from SKILL.md and register as slash commands
     skills, skill_files = load_skills()
     if skills:
-        register_skills(skills, agent)
-        for path in skill_files:
-            renderer.print_info(f"Loaded skills from: {path}")
+        enabled_skills = config.skills.get_enabled()
+        filtered_skills = {k: v for k, v in skills.items() if k in enabled_skills}
+        if filtered_skills:
+            register_skills(filtered_skills, agent)
+            for path in skill_files:
+                renderer.print_info(f"Loaded skills from: {path}")
+        else:
+            renderer.print_info("No skills enabled in config. Skipping skill loading.")
 
     # Handle session resume
     if resume:

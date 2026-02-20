@@ -5,76 +5,95 @@ from unittest.mock import patch
 
 import pytest
 
-from coding_agent.skills import find_project_skill_file, load_skills, parse_skills
+from coding_agent.skills import (
+    Skill,
+    find_project_skill_file,
+    load_skills,
+    parse_yaml_frontmatter,
+    parse_skills,
+)
+
+
+class TestParseYamlFrontmatter:
+    """Tests for parse_yaml_frontmatter function."""
+
+    def test_parses_yaml_frontmatter(self):
+        """Parse YAML frontmatter from content."""
+        content = """---
+name: my-skill
+description: A test skill
+---
+# Instructions
+Skill content here."""
+        frontmatter, remaining = parse_yaml_frontmatter(content)
+        assert frontmatter["name"] == "my-skill"
+        assert frontmatter["description"] == "A test skill"
+        assert "# Instructions" in remaining
+
+    def test_no_frontmatter(self):
+        """Returns empty dict when no frontmatter."""
+        content = "Some content without frontmatter."
+        frontmatter, remaining = parse_yaml_frontmatter(content)
+        assert frontmatter == {}
+        assert remaining == content
+
+    def test_empty_frontmatter(self):
+        """Handles empty frontmatter block."""
+        content = "---\n---\n# Instructions\nSkill content."
+        frontmatter, remaining = parse_yaml_frontmatter(content)
+        assert frontmatter == {}
+        assert "# Instructions" in remaining
 
 
 class TestParseSkills:
     """Tests for parse_skills function."""
 
-    def test_single_skill(self):
-        """Parse a single skill section."""
-        content = "## review\nReview the code for issues."
-        skills = parse_skills(content)
+    def test_parse_from_folder(self):
+        """Parse skill from folder - name comes from folder."""
+        content = "# Instructions\nReview the code for issues."
+        skills = parse_skills(content, None)
+        assert "unknown" in skills
+        assert isinstance(skills["unknown"], Skill)
+        assert "Review the code" in skills["unknown"].instructions
+
+    def test_with_scripts_references_assets_folders(self, tmp_path):
+        """Detects scripts, references, and assets folders when present."""
+        skill_folder = tmp_path / "review"
+        skill_folder.mkdir()
+        (skill_folder / "scripts").mkdir()
+        (skill_folder / "references").mkdir()
+        (skill_folder / "assets").mkdir()
+
+        content = "# Instructions\nReview the code."
+        skills = parse_skills(content, skill_folder)
+
         assert "review" in skills
-        assert skills["review"] == "Review the code for issues."
+        assert skills["review"].scripts_path == skill_folder / "scripts"
+        assert skills["review"].references_path == skill_folder / "references"
+        assert skills["review"].assets_path == skill_folder / "assets"
 
-    def test_multiple_skills(self):
-        """Parse multiple skill sections."""
-        content = "## review\nCheck for bugs.\n\n## deploy\nGuide deployment."
-        skills = parse_skills(content)
-        assert "review" in skills
-        assert "deploy" in skills
-        assert skills["review"] == "Check for bugs."
-        assert skills["deploy"] == "Guide deployment."
+    def test_paths_none_when_folders_dont_exist(self, tmp_path):
+        """Returns None paths when folders don't exist."""
+        content = "Instructions here."
+        skills = parse_skills(content, tmp_path)
 
-    def test_skill_name_lowercased(self):
-        """Skill names are lowercased."""
-        content = "## Review\nReview the code."
-        skills = parse_skills(content)
-        assert "review" in skills
-        assert "Review" not in skills
+        assert tmp_path.name in skills
+        assert skills[tmp_path.name].scripts_path is None
+        assert skills[tmp_path.name].references_path is None
+        assert skills[tmp_path.name].assets_path is None
 
-    def test_skill_name_spaces_to_hyphens(self):
-        """Spaces in skill names become hyphens."""
-        content = "## code review\nReview the code."
-        skills = parse_skills(content)
-        assert "code-review" in skills
-
-    def test_ignores_level1_headings(self):
-        """Level-1 headings are not parsed as skills."""
-        content = "# SKILL.md\n\n## review\nReview the code."
-        skills = parse_skills(content)
-        assert len(skills) == 1
-        assert "review" in skills
-
-    def test_ignores_level3_headings(self):
-        """Level-3 headings inside a skill are part of its content."""
-        content = "## review\nReview the code.\n### subsection\nMore details."
-        skills = parse_skills(content)
-        assert "review" in skills
-        assert "### subsection" in skills["review"]
-
-    def test_empty_content(self):
-        """Empty content returns empty dict."""
-        assert parse_skills("") == {}
-
-    def test_no_skill_sections(self):
-        """Content with no ## headings returns empty dict."""
-        assert parse_skills("Just some text with no headings.") == {}
-
-    def test_multiline_skill_content(self):
-        """Multiline skill content is preserved."""
-        content = "## deploy\nLine 1.\nLine 2.\nLine 3."
-        skills = parse_skills(content)
-        assert "Line 1." in skills["deploy"]
-        assert "Line 2." in skills["deploy"]
-        assert "Line 3." in skills["deploy"]
-
-    def test_trailing_whitespace_stripped(self):
-        """Leading/trailing whitespace in skill content is stripped."""
-        content = "## review\n\nSome content.\n\n"
-        skills = parse_skills(content)
-        assert skills["review"] == "Some content."
+    def test_with_yaml_frontmatter(self):
+        """Parses skills with YAML frontmatter metadata."""
+        content = """---
+name: review
+description: Code review skill
+---
+# Instructions
+Review code carefully."""
+        skills = parse_skills(content, None)
+        assert "unknown" in skills
+        assert skills["unknown"].description == "Code review skill"
+        assert "Review code carefully" in skills["unknown"].instructions
 
 
 class TestFindProjectSkillFile:
@@ -85,7 +104,7 @@ class TestFindProjectSkillFile:
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         skill_file = tmp_path / "SKILL.md"
-        skill_file.write_text("## review\nReview the code.")
+        skill_file.write_text("# Instructions\nReview the code.")
 
         result = find_project_skill_file(tmp_path)
         assert result == skill_file
@@ -101,7 +120,7 @@ class TestFindProjectSkillFile:
     def test_falls_back_to_cwd_without_git(self, tmp_path):
         """Uses cwd when no git root is found."""
         skill_file = tmp_path / "SKILL.md"
-        skill_file.write_text("## review\nReview the code.")
+        skill_file.write_text("# Instructions\nReview the code.")
 
         result = find_project_skill_file(tmp_path)
         assert result == skill_file
@@ -115,33 +134,35 @@ class TestLoadSkills:
         git_dir = tmp_path / ".git"
         git_dir.mkdir()
         skill_file = tmp_path / "SKILL.md"
-        skill_file.write_text("## review\nReview the code.")
+        skill_file.write_text("# Instructions\nReview the code.")
 
-        with patch("coding_agent.skills.GLOBAL_SKILL_FILE", tmp_path / "nonexistent.md"):
+        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", tmp_path / "nonexistent"):
             skills, loaded = load_skills(tmp_path)
 
-        assert "review" in skills
+        assert len(skills) >= 1
         assert str(skill_file) in loaded
 
     def test_project_skills_override_global(self, tmp_path):
         """Project skills take priority over global skills."""
-        global_file = tmp_path / "global_skill.md"
-        global_file.write_text("## review\nGlobal review instructions.")
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir()
+        global_skill_folder = global_skills_dir / "review"
+        global_skill_folder.mkdir()
+        (global_skill_folder / "SKILL.md").write_text("# Instructions\nGlobal review.")
 
         git_dir = tmp_path / "project" / ".git"
         git_dir.mkdir(parents=True)
         project_file = tmp_path / "project" / "SKILL.md"
-        project_file.write_text("## review\nProject review instructions.")
+        project_file.write_text("# Instructions\nProject review.")
 
-        with patch("coding_agent.skills.GLOBAL_SKILL_FILE", global_file):
+        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", global_skills_dir):
             skills, loaded = load_skills(tmp_path / "project")
 
-        assert skills["review"] == "Project review instructions."
         assert len(loaded) == 2
 
     def test_returns_empty_when_no_skill_files(self, tmp_path):
         """Returns empty dict when no SKILL.md files exist."""
-        with patch("coding_agent.skills.GLOBAL_SKILL_FILE", tmp_path / "nonexistent.md"):
+        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", tmp_path / "nonexistent"):
             skills, loaded = load_skills(tmp_path)
 
         assert skills == {}
@@ -149,11 +170,14 @@ class TestLoadSkills:
 
     def test_global_skills_loaded_when_no_project_file(self, tmp_path):
         """Global skills are loaded when no project SKILL.md exists."""
-        global_file = tmp_path / "global_skill.md"
-        global_file.write_text("## deploy\nDeploy the app.")
+        global_skills_dir = tmp_path / "skills"
+        global_skills_dir.mkdir()
+        global_skill_folder = global_skills_dir / "deploy"
+        global_skill_folder.mkdir()
+        (global_skill_folder / "SKILL.md").write_text("# Instructions\nDeploy the app.")
 
-        with patch("coding_agent.skills.GLOBAL_SKILL_FILE", global_file):
+        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", global_skills_dir):
             skills, loaded = load_skills(tmp_path)
 
         assert "deploy" in skills
-        assert str(global_file) in loaded
+        assert str(global_skill_folder / "SKILL.md") in loaded

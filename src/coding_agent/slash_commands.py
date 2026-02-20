@@ -4,15 +4,19 @@ from typing import TYPE_CHECKING, Callable
 from urllib.error import URLError
 from socket import timeout as socket_timeout
 
+import yaml
+
 import litellm
 from prompt_toolkit.completion import Completer, Completion
 from rich.table import Table
 
+from coding_agent.config import DEFAULT_CONFIG_FILE, SkillSetting, load_config
 from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
 from coding_agent.project_instructions import find_git_root
 from coding_agent.renderer import Renderer
 from coding_agent.session import SessionManager
+from coding_agent.skills import Skill
 
 if TYPE_CHECKING:
     from coding_agent.agent import Agent
@@ -182,6 +186,129 @@ def cmd_init(args: str, conversation: ConversationManager, session_manager: Sess
     return True
 
 
+def run_skills_tui(skills: list[SkillSetting]) -> list[SkillSetting] | None:
+    """Run an interactive TUI for configuring skills.
+
+    Two-phase flow:
+      Phase 1 – checkbox list with ↑/↓ navigation and Space to toggle.
+      Phase 2 – confirmation screen before saving.
+
+    Args:
+        skills: List of SkillSetting objects to configure.
+
+    Returns:
+        Updated list of SkillSetting with modified enabled flags, or None if cancelled.
+    """
+    import copy
+
+    from prompt_toolkit.application import Application
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+
+    working_skills = [copy.copy(s) for s in skills]
+    state: dict = {"cursor": 0, "phase": 1, "cancelled": False}
+
+    def get_content() -> list[tuple[str, str]]:
+        lines: list[tuple[str, str]] = []
+        if state["phase"] == 1:
+            lines.append(("bold", " Configure Skills\n"))
+            lines.append(("", " \u2191\u2193 navigate   Space toggle   Enter confirm   Esc cancel\n\n"))
+            for i, skill in enumerate(working_skills):
+                cursor_char = "\u25b6" if i == state["cursor"] else " "
+                check = "x" if skill.enabled else " "
+                style = "bold" if i == state["cursor"] else ""
+                lines.append((style, f" {cursor_char} [{check}] {skill.name}\n"))
+            enabled_count = sum(1 for s in working_skills if s.enabled)
+            lines.append(("", f"\n {enabled_count}/{len(working_skills)} skills enabled\n"))
+        else:
+            lines.append(("bold", " Save Changes?\n\n"))
+            enabled_count = sum(1 for s in working_skills if s.enabled)
+            lines.append(("", f"  {enabled_count} of {len(working_skills)} skills will be enabled.\n\n"))
+            lines.append(("", " Enter to save   Esc to go back\n"))
+        return lines
+
+    kb = KeyBindings()
+
+    @kb.add("up")
+    def _up(event) -> None:
+        if state["phase"] == 1:
+            state["cursor"] = max(0, state["cursor"] - 1)
+
+    @kb.add("down")
+    def _down(event) -> None:
+        if state["phase"] == 1:
+            state["cursor"] = min(len(working_skills) - 1, state["cursor"] + 1)
+
+    @kb.add("space")
+    def _toggle(event) -> None:
+        if state["phase"] == 1:
+            working_skills[state["cursor"]].enabled = not working_skills[state["cursor"]].enabled
+
+    @kb.add("enter")
+    def _enter(event) -> None:
+        if state["phase"] == 1:
+            state["phase"] = 2
+        else:
+            event.app.exit()
+
+    @kb.add("escape", eager=True)
+    def _escape(event) -> None:
+        if state["phase"] == 2:
+            state["phase"] = 1
+        else:
+            state["cancelled"] = True
+            event.app.exit()
+
+    @kb.add("c-c")
+    def _ctrl_c(event) -> None:
+        state["cancelled"] = True
+        event.app.exit()
+
+    layout = Layout(Window(FormattedTextControl(get_content, focusable=True)))
+    app = Application(layout=layout, key_bindings=kb, full_screen=False)
+    app.run()
+
+    if state["cancelled"]:
+        return None
+    return working_skills
+
+
+def cmd_skills(
+    args: str,
+    conversation: ConversationManager,
+    session_manager: SessionManager,
+    renderer: Renderer,
+    llm_client: LLMClient | None = None,
+    agent: "Agent | None" = None,
+) -> bool:
+    """Configure skills via interactive TUI."""
+    try:
+        config = load_config()
+    except Exception as e:
+        renderer.print_error(f"Failed to load config: {e}")
+        return True
+
+    updated = run_skills_tui(config.skills.skills)
+
+    if updated is None:
+        renderer.print_info("Cancelled.")
+        return True
+
+    config_data = config.model_dump()
+    config_data["skills"] = {"skills": [s.model_dump() for s in updated]}
+    DEFAULT_CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(DEFAULT_CONFIG_FILE, "w") as f:
+        yaml.dump(config_data, f, default_flow_style=False)
+
+    enabled_count = sum(1 for s in updated if s.enabled)
+    renderer.print_success(
+        f"Saved: {enabled_count}/{len(updated)} skills enabled. Changes take effect next session."
+    )
+    return True
+
+
 COMMANDS: dict[str, SlashCommand] = {
     "help": SlashCommand("help", cmd_help, "Show help message", False),
     "clear": SlashCommand("clear", cmd_clear, "Clear conversation history", False),
@@ -189,18 +316,19 @@ COMMANDS: dict[str, SlashCommand] = {
     "sessions": SlashCommand("sessions", cmd_sessions, "List saved sessions", False),
     "model": SlashCommand("model", cmd_model, "Switch to a different model", True),
     "init": SlashCommand("init", cmd_init, "Create AGENTS.md template in project root", False),
+    "skills": SlashCommand("skills", cmd_skills, "Configure skills (toggle enabled/disabled)", False),
     "exit": SlashCommand("exit", cmd_exit, "Exit the session", False),
 }
 
 
-def register_skills(skills: dict[str, str], agent: "Agent") -> list[str]:
+def register_skills(skills: dict[str, Skill], agent: "Agent") -> list[str]:
     """Register skills from SKILL.md as dynamic slash commands.
 
     Each skill becomes a slash command that runs its instructions through
     the agent. Project skills override built-in commands with the same name.
 
     Args:
-        skills: Mapping of skill name to instruction content.
+        skills: Mapping of skill name to Skill object.
         agent: Agent instance used to execute skill prompts.
 
     Returns:
@@ -208,11 +336,13 @@ def register_skills(skills: dict[str, str], agent: "Agent") -> list[str]:
     """
     registered: list[str] = []
 
-    for name, content in skills.items():
+    for name, skill in skills.items():
         if not name:
             continue
 
-        # Capture skill content in a closure
+        content = skill.instructions
+        description = skill.description
+
         def _make_handler(skill_content: str):
             def handler(
                 args: str,
@@ -236,7 +366,7 @@ def register_skills(skills: dict[str, str], agent: "Agent") -> list[str]:
         COMMANDS[name] = SlashCommand(
             name=name,
             handler=_make_handler(content),
-            help_text=f"[skill] {content[:60].splitlines()[0] if content else name}",
+            help_text=f"[skill] {description or content[:60].splitlines()[0] if content else name}",
             arg_required=False,
         )
         registered.append(name)

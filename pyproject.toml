@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coding-agent"
-version = "0.7.1"
+version = "0.8.2"
 description = "Self-hosted, model-agnostic AI coding agent"
 requires-python = ">=3.10"
 dependencies = [
@@ -21,7 +21,7 @@ dependencies = [
 dev = ["pytest>=9.0"]
 
 [project.scripts]
-coding-agent = "coding_agent.cli:main"
+coding-agent = "coding_agent.cli:cli"
 
 [tool.setuptools.packages.find]
 where = ["src"]
