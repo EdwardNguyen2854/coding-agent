@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coding-agent"
+version = "0.9.0"
+description = "Self-hosted, model-agnostic AI coding agent"
+requires-python = ">=3.10"
+dependencies = [
+    "litellm>=1.81",
+    "rich>=14.0",
+    "click>=8.0",
+    "prompt-toolkit>=3.0",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "truststore>=0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0"]
+
+[project.scripts]
+coding-agent = "coding_agent.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]
