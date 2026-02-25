@@ -67,6 +67,7 @@ def cmd_help(args: str, conversation: ConversationManager, session_manager: Sess
 def cmd_clear(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Clear conversation history."""
     conversation.clear()
+    renderer.console.clear()
     renderer.print_success("Conversation cleared.")
     return True
 

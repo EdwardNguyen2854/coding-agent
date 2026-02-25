@@ -3,6 +3,19 @@
 import re
 from pathlib import Path
 
+_MAX_PARAM_DISPLAY = 120
+
+
+def _fmt_params(params: dict) -> str:
+    """Format params dict with long values truncated for display."""
+    parts = []
+    for k, v in params.items():
+        v_str = str(v)
+        if len(v_str) > _MAX_PARAM_DISPLAY:
+            v_str = v_str[:_MAX_PARAM_DISPLAY] + f"... ({len(v_str)} chars)"
+        parts.append(f"{k}={v_str!r}")
+    return "{" + ", ".join(parts) + "}"
+
 
 DESTRUCTIVE_PATTERNS = [
     r"rm\s+-rf\s+",
@@ -104,10 +117,6 @@ class PermissionSystem:
         Returns:
             True if approved (Y), False if denied (N)
         """
-        if self.renderer:
-            self.renderer.print_info(f"\nTool: {tool_name}")
-            self.renderer.print_info(f"Parameters: {params}")
-
         if self._prompt_callback:
             return self._prompt_callback(tool_name, params, False)
 
@@ -132,9 +141,7 @@ class PermissionSystem:
             True if approved (Y), False if denied (N)
         """
         if self.renderer:
-            self.renderer.print_error("\n⚠️  WARNING: Potentially destructive command!")
-            self.renderer.print_error(f"Tool: {tool_name}")
-            self.renderer.print_error(f"Parameters: {params}")
+            self.renderer.print_warning("  ⚠  destructive command — review carefully")
         else:
             print("\n⚠️  WARNING: This command may delete or overwrite files!")
 

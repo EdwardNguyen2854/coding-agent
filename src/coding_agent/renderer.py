@@ -4,7 +4,7 @@ import difflib
 
 _LIVE_REFRESH_HZ = 8
 _MAX_DIFF_LINES = 80
-_MAX_ARG_DISPLAY = 50
+_MAX_ARG_DISPLAY = 80
 _SHORT_SESSION_ID_LEN = 12
 
 from rich.align import Align
@@ -13,6 +13,7 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.rule import Rule
+from rich.spinner import Spinner
 from rich.syntax import Syntax
 from rich.status import Status
 from rich.text import Text
@@ -23,18 +24,29 @@ class _LazyMarkdown:
 
     Rich Live calls ``__rich_console__`` at most ``refresh_per_second`` times.
     This avoids building a new ``Markdown`` object on every token received.
+    While waiting for the first token it renders an animated spinner instead.
     """
 
     def __init__(self) -> None:
         self._text = ""
         self._cached: Markdown | None = None
+        self._thinking = False
+        self._spinner = Spinner("dots", text=Text(" Thinking...", style="dim"))
+
+    def start_thinking(self) -> None:
+        """Switch to spinner mode until the first token arrives."""
+        self._thinking = True
 
     def append(self, delta: str) -> None:
-        """Append new text and invalidate the cache."""
+        """Append new text, invalidate the cache, and stop the spinner."""
+        self._thinking = False
         self._text += delta
         self._cached = None
 
     def __rich_console__(self, console, options):
+        if self._thinking and not self._text:
+            yield from self._spinner.__rich_console__(console, options)
+            return
         if self._cached is None:
             self._cached = Markdown(self._text)
         yield from self._cached.__rich_console__(console, options)
@@ -66,8 +78,8 @@ class StreamingDisplay:
         self._live.__exit__(exc_type, exc_val, exc_tb)
 
     def start_thinking(self) -> None:
-        """Show a thinking spinner before the first token arrives."""
-        pass  # Removed "Thinking..." text to keep conversation cleaner
+        """Show an animated spinner before the first token arrives."""
+        self._renderable.start_thinking()
 
     def update(self, delta: str) -> None:
         """Append new text; Markdown is rebuilt only on the next Live refresh."""
@@ -156,7 +168,7 @@ class Renderer:
         Returns:
             A Rich Status spinner.
         """
-        return self.console.status(message)
+        return self.console.status(message, spinner="dots", spinner_style="dim cyan")
 
     def render_separator(self) -> None:
         """Render a dim horizontal rule as a separator."""
@@ -231,12 +243,12 @@ class Renderer:
             tool_name: Name of the tool being executed
             tool_args: Dictionary of tool arguments
         """
-        self.console.print(f"[bold cyan]◆[/bold cyan] [cyan]{tool_name}[/cyan]")
+        self.console.print(f"[cyan]{tool_name}[/cyan]", highlight=False)
         for key, value in tool_args.items():
-            value_str = str(value)
+            value_str = str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
             if len(value_str) > _MAX_ARG_DISPLAY:
-                value_str = value_str[:_MAX_ARG_DISPLAY - 3] + "..."
-            self.console.print(f"  [dim]{key}[/dim]: {value_str}", highlight=False)
+                value_str = value_str[:_MAX_ARG_DISPLAY - 1] + "…"
+            self.console.print(f"[dim]{key}:[/dim] {value_str}", highlight=False)
 
     def render_diff_preview(self, old_content: str, new_content: str, file_path: str = "") -> None:
         """Render before/after diff preview for file edits using unified diff format.

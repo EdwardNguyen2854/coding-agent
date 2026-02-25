@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 from typing import Any
 
 from coding_agent.interrupt import is_interrupted
@@ -15,7 +16,7 @@ from coding_agent.utils import truncate_output
 class Agent:
     """ReAct agent that orchestrates LLM calls and tool execution."""
 
-    def __init__(self, llm_client, conversation, renderer, session_manager=None, session_data=None, config=None) -> None:
+    def __init__(self, llm_client, conversation, renderer, session_manager=None, session_data=None, config=None, workspace_root: str | None = None) -> None:
         """Initialize the agent.
 
         Args:
@@ -25,6 +26,7 @@ class Agent:
             session_manager: SessionManager for auto-save (optional)
             session_data: Session data dict for auto-save (optional)
             config: AgentConfig for settings like max_context_tokens (optional)
+            workspace_root: Root directory for file tools (defaults to cwd)
         """
         self.llm_client = llm_client
         self.conversation = conversation
@@ -35,6 +37,7 @@ class Agent:
         self.consecutive_failures = 0
         self.permissions = PermissionSystem(renderer)
         self.max_context_tokens = config.max_context_tokens if config else 128000
+        self.workspace_root = workspace_root or os.getcwd()
 
     @staticmethod
     def _has_tool_messages(messages: list[dict]) -> bool:
@@ -97,17 +100,30 @@ class Agent:
 
         self.conversation.add_message("user", user_input)
 
+        iterations = 0
+        max_iterations = 40
+        last_tool_sig: str | None = None
+        repeated_count = 0
+        max_repeated = 4
+
         while True:
             if is_interrupted():
                 self.renderer.print_warning("\nInterrupted! Stopping agent.")
                 self.conversation.add_message("assistant", "[Interrupted by user]")
                 return ""
 
+            iterations += 1
+            if iterations > max_iterations:
+                self.renderer.print_warning(
+                    f"\nStopped: agent exceeded {max_iterations} iterations without finishing."
+                )
+                return ""
+
             # Auto-truncate before every LLM call to prevent context overflow
             self.conversation.truncate_if_needed(max_tokens=self.max_context_tokens)
 
             messages = self.conversation.get_messages()
-            tools = get_openai_tools()
+            tools = get_openai_tools(self.workspace_root)
 
             if not self._call_llm(messages, tools):
                 return ""
@@ -124,6 +140,19 @@ class Agent:
                 self.renderer.console.print()  # blank line after response
                 self._save_session()
                 return assistant_message or ""
+
+            # Detect identical repeated tool calls (stuck loop)
+            tool_sig = str([(tc.function.name, tc.function.arguments) for tc in tool_calls])
+            if tool_sig == last_tool_sig:
+                repeated_count += 1
+                if repeated_count >= max_repeated:
+                    self.renderer.print_warning(
+                        f"\nStopped: same tool call repeated {max_repeated} times in a row."
+                    )
+                    return ""
+            else:
+                repeated_count = 0
+                last_tool_sig = tool_sig
 
             # Add assistant message with tool_calls BEFORE tool results
             self.conversation.add_assistant_tool_call(
@@ -195,18 +224,18 @@ class Agent:
             self.renderer.print_info("  ✗ denied")
             return
 
-        with self.renderer.status_spinner(f"  Running {tool_name}..."):
+        with self.renderer.status_spinner(f"[dim] Running {tool_name}...[/dim]"):
             result = execute_tool(tool_name, arguments)
 
         if result.is_error:
-            self.renderer.print_error(f"  error: {result.error}")
-            tool_result_content = json.dumps({"error": result.error, "output": truncate_output(result.output)})
+            self.renderer.print_error(f"  error: {result.message}")
+            tool_result_content = json.dumps({"error": result.message, "output": truncate_output(result.output)})
             self.consecutive_failures += 1
         else:
             self.renderer.print_success("  ✓ done")
             tool_result_content = truncate_output(result.output)
-            if result.error:
-                tool_result_content = json.dumps({"error": result.error, "output": truncate_output(result.output)})
+            if result.message:
+                tool_result_content = json.dumps({"message": result.message, "output": truncate_output(result.output)})
             self.consecutive_failures = 0
 
         self.conversation.add_message("tool", tool_result_content, tool_call_id=tool_id)
