@@ -1,16 +1,9 @@
 """Base types for tool system."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
-
-@dataclass
-class ToolResult:
-    """Result from tool execution."""
-
-    output: str
-    error: str | None = None
-    is_error: bool = False
+from coding_agent.tool_result import ToolResult
 
 
 @dataclass
@@ -21,3 +14,4 @@ class ToolDefinition:
     description: str
     parameters: dict[str, Any]
     handler: Callable[[dict], ToolResult]
+    schema: dict[str, Any] = field(default_factory=dict)

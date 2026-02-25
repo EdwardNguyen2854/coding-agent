@@ -481,3 +481,7 @@ def run(model: str | None, api_base: str | None, temperature: float | None, max_
                 renderer.render_status_line(config.model, token_count, session_id)
             except ConnectionError as e:
                 renderer.print_error(str(e))
+
+
+# Alias for test compatibility
+main = cli

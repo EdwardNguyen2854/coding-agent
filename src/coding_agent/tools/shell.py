@@ -1,118 +1,94 @@
-"""Shell tool - execute shell commands."""
+from __future__ import annotations
 
-import platform
 import subprocess
 from pathlib import Path
+from typing import Any, Dict, Optional
 
-from coding_agent.tools.base import ToolDefinition, ToolResult
-from coding_agent.utils import truncate_output
+from coding_agent.tool_guard import ToolGuard
+from coding_agent.tool_result import ToolResult
+
+SCHEMA = {
+    "name": "shell",
+    "description": (
+        "Execute a shell command in the workspace. "
+        "Prefer safe_shell for everyday tasks — this tool has no pattern-based guards. "
+        "Avoid destructive commands; the agent may require user confirmation for risky operations."
+    ),
+    "properties": {
+        "command": {"type": "string", "description": "Shell command to execute."},
+        "cwd": {
+            "type": "string",
+            "description": "Working directory. Defaults to workspace root.",
+        },
+        "timeout_sec": {
+            "type": "integer",
+            "description": "Timeout in seconds. Default: 60.",
+        },
+    },
+    "required": ["command"],
+}
 
 
-DEFAULT_TIMEOUT = 120
-MAX_OUTPUT_LENGTH = 30000
+class ShellTool:
+    name = "shell"
 
-_cwd = Path.cwd()
+    def __init__(self, workspace_root: str, policy: Optional[Dict[str, Any]] = None) -> None:
+        self._guard = ToolGuard(workspace_root=workspace_root, policy=policy or {})
+        self._workspace_root = Path(workspace_root).resolve()
 
+    def schema(self) -> Dict[str, Any]:
+        return SCHEMA
 
-def execute(params: dict) -> ToolResult:
-    """Execute a shell command.
+    def run(self, args: Dict[str, Any]) -> ToolResult:
+        blocked = self._guard.check(self.name, args, schema=SCHEMA)
+        if blocked is not None:
+            return blocked
 
-    Args:
-        params: Dict with 'command' (required), 'timeout' (optional)
+        command: str = args["command"]
+        timeout: int = int(args.get("timeout_sec", 60))
 
-    Returns:
-        ToolResult with command output
-    """
-    global _cwd
-
-    command = params.get("command", "")
-    timeout = params.get("timeout", DEFAULT_TIMEOUT)
-
-    if not command:
-        return ToolResult(output="", error="Command is required", is_error=True)
-
-    command_stripped = command.strip()
-
-    is_cd_command = (
-        command_stripped.startswith("cd ") or
-        command_stripped == "cd" or
-        command_stripped.startswith("cd/") or
-        command_stripped.startswith("cd\\")
-    )
-
-    if is_cd_command:
-        if command_stripped in ("cd", "cd/", "cd\\"):
-            return ToolResult(output=str(_cwd), error=None, is_error=False)
-
-        if command_stripped.startswith("cd "):
-            new_dir = command_stripped[3:].strip()
-        elif command_stripped.startswith("cd/"):
-            new_dir = command_stripped[3:]
+        cwd_raw = args.get("cwd")
+        if cwd_raw:
+            cwd = Path(cwd_raw)
+            if not cwd.is_absolute():
+                cwd = (self._workspace_root / cwd).resolve()
+            else:
+                cwd = cwd.resolve()
         else:
-            new_dir = command_stripped[2:]
+            cwd = self._workspace_root
 
-        if not new_dir:
-            return ToolResult(output=str(_cwd), error=None, is_error=False)
+        if not cwd.exists():
+            return ToolResult.failure("CWD_NOT_FOUND", f"Working directory does not exist: {cwd}")
 
         try:
-            target_path = _cwd / new_dir
-            target_path = target_path.resolve()
+            proc = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                cwd=str(cwd),
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return ToolResult.failure(
+                "TIMEOUT",
+                f"Command timed out after {timeout} seconds: {command}",
+            )
+        except Exception as exc:
+            return ToolResult.failure("EXEC_ERROR", f"Execution failed: {exc}")
 
-            if not target_path.exists():
-                return ToolResult(output="", error=f"cd: no such directory: {target_path}", is_error=True)
-
-            if not target_path.is_dir():
-                return ToolResult(output="", error=f"cd: not a directory: {target_path}", is_error=True)
-
-            _cwd = target_path
-            return ToolResult(output=str(_cwd), error=None, is_error=False)
-        except Exception as e:
-            return ToolResult(output="", error=f"cd failed: {str(e)}", is_error=True)
-
-    if platform.system() == "Windows":
-        shell_cmd = ["cmd", "/c", command]
-    else:
-        shell_cmd = ["bash", "-c", command]
-
-    try:
-        result = subprocess.run(
-            shell_cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=str(_cwd),
+        success = proc.returncode == 0
+        return ToolResult.success(
+            data={
+                "command": command,
+                "exit_code": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+                "success": success,
+            },
+            message=f"Command exited with code {proc.returncode}",
+            warnings=(
+                [] if success
+                else [f"Command exited with non-zero code {proc.returncode}"]
+            ),
         )
-
-        output = result.stdout
-        if result.stderr:
-            if output:
-                output += "\n[stderr]\n" + result.stderr
-            else:
-                output = result.stderr
-
-        output = truncate_output(output, MAX_OUTPUT_LENGTH)
-
-        return ToolResult(output=output, error=None, is_error=False)
-
-    except subprocess.TimeoutExpired:
-        return ToolResult(output="", error=f"Command timed out after {timeout} seconds", is_error=True)
-    except FileNotFoundError:
-        shell_name = "cmd" if platform.system() == "Windows" else "bash"
-        return ToolResult(output="", error=f"Shell '{shell_name}' not found", is_error=True)
-    except Exception as e:
-        return ToolResult(output="", error=str(e), is_error=True)
-
-
-definition = ToolDefinition(
-    name="shell",
-    description="Execute a shell command in the terminal",
-    parameters={
-        "type": "object",
-        "properties": {
-            "command": {"type": "string", "description": "Shell command to execute"},
-            "timeout": {"type": "number", "description": "Timeout in seconds (default 120)", "default": 120},
-        },
-        "required": ["command"],
-    },
-    handler=execute,
-)

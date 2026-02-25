@@ -1,75 +1,148 @@
-"""File edit tool - edits files by replacing exact string matches."""
+from __future__ import annotations
 
+import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, Optional
 
-from coding_agent.tools.base import ToolDefinition, ToolResult
+from coding_agent.tool_guard import ToolGuard
+from coding_agent.tool_result import ToolResult
+
+SCHEMA = {
+    "name": "file_edit",
+    "description": (
+        "Edit an existing file by replacing an exact string with new content. "
+        "The old_str must match exactly once in the file; use file_read first if unsure."
+    ),
+    "properties": {
+        "path": {"type": "string", "description": "Path to the file to edit."},
+        "old_str": {"type": "string", "description": "Exact substring to find and replace. Must occur exactly once."},
+        "new_str": {"type": "string", "description": "Replacement text."},
+    },
+    "required": ["path", "old_str", "new_str"],
+}
 
 
-def execute(params: dict) -> ToolResult:
-    """Edit a file by replacing exact string match.
+class FileEditTool:
+    name = "file_edit"
 
-    Args:
-        params: Dict with 'path' (required), 'old_string' (required), 'new_string' (required)
+    def __init__(self, workspace_root: str, policy: Optional[Dict[str, Any]] = None) -> None:
+        self._guard = ToolGuard(workspace_root=workspace_root, policy=policy or {})
+        self._workspace_root = Path(workspace_root).resolve()
 
-    Returns:
-        ToolResult with success message or error
-    """
-    path = params.get("path", "")
-    old_string = params.get("old_string", "")
-    new_string = params.get("new_string", "")
+    def schema(self) -> Dict[str, Any]:
+        return SCHEMA
 
-    if not path:
-        return ToolResult(output="", error="Path is required", is_error=True)
+    def run(self, args: Dict[str, Any]) -> ToolResult:
+        blocked = self._guard.check(self.name, args, schema=SCHEMA)
+        if blocked is not None:
+            return blocked
 
-    if not old_string:
-        return ToolResult(output="", error="old_string is required", is_error=True)
+        raw_path = args["path"]
+        old_str: str = args["old_str"]
+        new_str: str = args["new_str"]
 
-    p = Path(path)
+        path = Path(raw_path)
+        if not path.is_absolute():
+            path = (self._workspace_root / path).resolve()
+        else:
+            path = path.resolve()
 
-    if not p.exists():
-        return ToolResult(output="", error=f"File not found: {path}", is_error=True)
+        if not path.exists():
+            return ToolResult.failure("FILE_NOT_FOUND", f"File not found: {path}")
+        if not path.is_file():
+            return ToolResult.failure("NOT_A_FILE", f"Path is not a file: {path}")
 
-    if not p.is_file():
-        return ToolResult(output="", error=f"Not a file: {path}", is_error=True)
+        try:
+            original = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return ToolResult.failure("READ_ERROR", f"Could not read file: {exc}")
 
-    try:
-        content = p.read_text(encoding="utf-8")
-    except Exception as e:
-        return ToolResult(output="", error=f"Cannot read file: {str(e)}", is_error=True)
+        count = original.count(old_str)
+        if count == 0:
+            return ToolResult.failure(
+                "MATCH_NOT_FOUND",
+                "old_str was not found in the file. Use file_read to inspect current content.",
+            )
+        if count > 1:
+            return ToolResult.failure(
+                "AMBIGUOUS_MATCH",
+                f"old_str matched {count} times. Make old_str more specific so it matches exactly once.",
+            )
 
-    count = content.count(old_string)
+        updated = original.replace(old_str, new_str, 1)
 
-    if count == 0:
-        return ToolResult(output="", error=f"String not found in file: {old_string}", is_error=True)
+        try:
+            path.write_text(updated, encoding="utf-8")
+        except OSError as exc:
+            return ToolResult.failure("WRITE_ERROR", f"Could not write file: {exc}")
 
-    if count > 1:
-        return ToolResult(
-            output="",
-            error=f"String appears {count} times. Be more specific.",
-            is_error=True,
+        # Compute a simple line-change summary
+        old_lines = old_str.count("\n") + 1
+        new_lines = new_str.count("\n") + 1
+
+        return ToolResult.success(
+            data={
+                "path": str(path),
+                "old_lines": old_lines,
+                "new_lines": new_lines,
+                "net_line_change": new_lines - old_lines,
+            },
+            message=f"Edited {path.name}: replaced {old_lines}-line block with {new_lines}-line block",
         )
 
-    new_content = content.replace(old_string, new_string, 1)
 
-    try:
-        p.write_text(new_content, encoding="utf-8")
-    except Exception as e:
-        return ToolResult(output="", error=f"Cannot write file: {str(e)}", is_error=True)
-
-    return ToolResult(output=f"Successfully edited {path}", error=None, is_error=False)
+# ── Legacy compatibility shim ──────────────────────────────────────────────
 
 
-definition = ToolDefinition(
-    name="file_edit",
-    description="Edit a file by replacing exact string match (only works when string appears exactly once)",
-    parameters={
-        "type": "object",
-        "properties": {
-            "path": {"type": "string", "description": "File path to edit"},
-            "old_string": {"type": "string", "description": "String to replace"},
-            "new_string": {"type": "string", "description": "Replacement string"},
-        },
-        "required": ["path", "old_string", "new_string"],
-    },
-    handler=execute,
-)
+@dataclass
+class _LegacyResult:
+    is_error: bool
+    output: str = ""
+    error: str = ""
+
+
+def execute(args: dict[str, Any]) -> _LegacyResult:
+    """Standalone execute function for backwards compatibility.
+
+    Old API used old_string / new_string keys; new API uses old_str / new_str.
+    This shim translates between the two.
+    """
+    from coding_agent.tools.file_edit import FileEditTool
+
+    path_str: str | None = args.get("path")
+    if not path_str:
+        return _LegacyResult(is_error=True, error="path is required")
+
+    # Translate old key names → new key names
+    translated = dict(args)
+    if "old_string" in translated and "old_str" not in translated:
+        translated["old_str"] = translated.pop("old_string")
+    if "new_string" in translated and "new_str" not in translated:
+        translated["new_str"] = translated.pop("new_string")
+
+    # Reject empty old_str early
+    if not translated.get("old_str"):
+        return _LegacyResult(is_error=True, error="old_string must not be empty")
+
+    path = Path(path_str)
+    workspace = str(path.parent.resolve()) if path.is_absolute() else str(Path.cwd())
+    tool = FileEditTool(workspace_root=workspace)
+    result = tool.run(translated)
+
+    if not result.ok:
+        code = result.error_code or ""
+        msg = result.message
+
+        if code == "FILE_NOT_FOUND":
+            return _LegacyResult(is_error=True, error=f"file not found: {path_str}")
+        if code == "MATCH_NOT_FOUND":
+            return _LegacyResult(is_error=True, error=f"old_string not found in file")
+        if code == "AMBIGUOUS_MATCH":
+            # Extract count from message, e.g. "old_str matched 2 times"
+            m = re.search(r"(\d+)", msg)
+            count = m.group(1) if m else "?"
+            return _LegacyResult(is_error=True, error=f"old_string found {count} times — must match exactly once")
+        return _LegacyResult(is_error=True, error=msg)
+
+    return _LegacyResult(is_error=False, output=f"Successfully edited {path_str}")
