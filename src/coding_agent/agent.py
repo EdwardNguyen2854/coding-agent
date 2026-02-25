@@ -195,6 +195,7 @@ class Agent:
                 )
             return
 
+        self.renderer.console.print()
         self.renderer.render_tool_panel(tool_name, arguments)
 
         # Show diff preview for file_edit before execution
@@ -237,6 +238,7 @@ class Agent:
             if result.message:
                 tool_result_content = json.dumps({"message": result.message, "output": truncate_output(result.output)})
             self.consecutive_failures = 0
+        self.renderer.console.print()
 
         self.conversation.add_message("tool", tool_result_content, tool_call_id=tool_id)
 
