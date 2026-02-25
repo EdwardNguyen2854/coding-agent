@@ -57,14 +57,16 @@ Inside chat:
 
 Built-in tools are registered in `src/coding_agent/tools/`:
 
-- `file_read`
-- `file_write`
-- `file_edit`
-- `glob`
-- `grep`
-- `shell`
+- **File system**: `file_read`, `file_write`, `file_edit`, `file_patch`, `file_list`, `file_move`, `file_delete`
+- **Search**: `glob`, `grep`, `symbols_index`
+- **Shell**: `safe_shell`, `shell`
+- **Git**: `git_status`, `git_diff`, `git_commit`
+- **Quality**: `run_tests`, `run_lint`, `typecheck`
+- **Project intelligence**: `dependencies_read`, `workspace_info`
+- **Session state**: `state_set`, `state_get`
 
 Tool execution is permission-gated, with an optional auto-allow mode (`/auto-allow on`).
+See `docs/agent/TOOLS.md` for the full tool reference.
 
 ### 3) Workflow and planning commands
 
@@ -89,7 +91,7 @@ Slash commands include:
 
 ## Installation
 
-See full guide: `docs/INSTALLATION.md`
+See full guide: `docs/user/INSTALLATION.md`
 
 Quick install:
 
@@ -173,18 +175,23 @@ coding-agent --session 123e4567-e89b-12d3-a456-426614174000
 
 ```text
 src/coding_agent/
-  agent.py           # ReAct loop + tool handling
-  cli.py             # CLI entrypoint and REPL
-  config.py          # YAML config + validation
-  slash_commands.py  # Built-in slash commands
-  session.py         # Session persistence
-  workflow.py        # Todo/plan workflow state
-  tools/             # Tool implementations
+  agent.py            # ReAct loop + tool handling
+  cli.py              # CLI entrypoint and REPL
+  config.py           # YAML config + validation
+  slash_commands.py   # Built-in slash commands
+  session.py          # Session persistence
+  skills.py           # SKILL.md loader
+  workflow.py         # Todo/plan workflow state
+  tools/              # Tool implementations (22 tools)
 
 docs/
-  CLI-REFERENCE.md
-  INSTALLATION.md
-  SKILL-USAGE.md
+  agent/
+    TOOLS.md          # Tool reference (agent-facing)
+    PATCH-VS-WRITE.md # File editing guidance
+  user/
+    INSTALLATION.md
+    CLI-REFERENCE.md
+    SKILL-USAGE.md
 ```
 
 ## Development
@@ -214,9 +221,11 @@ coding-agent skills
 
 ## Documentation
 
-- Installation: `docs/INSTALLATION.md`
-- CLI reference: `docs/CLI-REFERENCE.md`
-- Skills: `docs/SKILL-USAGE.md`
+- Installation: `docs/user/INSTALLATION.md`
+- CLI reference: `docs/user/CLI-REFERENCE.md`
+- Skills: `docs/user/SKILL-USAGE.md`
+- Tool reference: `docs/agent/TOOLS.md`
+- File editing guidance: `docs/agent/PATCH-VS-WRITE.md`
 
 ## License
 
