@@ -1,9 +1,12 @@
 """Agent - ReAct loop orchestrator."""
 
 import json
+import logging
 from typing import Any
 
 from coding_agent.interrupt import is_interrupted
+
+_log = logging.getLogger(__name__)
 from coding_agent.permissions import PermissionSystem
 from coding_agent.tools import execute_tool, get_openai_tools
 from coding_agent.utils import truncate_output
@@ -180,8 +183,8 @@ class Agent:
                         if old_string in current_content:
                             new_content = current_content.replace(old_string, new_string, 1)
                             self.renderer.render_diff_preview(current_content, new_content, file_path=path)
-                except Exception:
-                    pass  # Silently skip diff if file cannot be read
+                except Exception as e:
+                    _log.debug("Skipping diff preview for %s: %s", path, e)
 
         if not self.permissions.check_approval(tool_name, arguments):
             denial_result = {

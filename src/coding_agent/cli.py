@@ -197,14 +197,6 @@ def skills(choice):
     console.print("[dim]Examples: coding-agent skills all / coding-agent skills none[/dim]")
 
 
-def _should_use_split_layout() -> bool:
-    """Return True if the terminal is wide/tall enough for the split-pane TUI."""
-    try:
-        size = os.get_terminal_size()
-        return sys.stdout.isatty() and size.columns >= 80 and size.lines >= 15
-    except OSError:
-        return False
-
 
 @cli.command()
 @click.version_option(version=__version__, prog_name="coding-agent")
@@ -229,13 +221,7 @@ def run(model: str | None, api_base: str | None, temperature: float | None, max_
         if api_base is None:
             api_base = OLLAMA_DEFAULT_API_BASE
 
-    use_split = _should_use_split_layout()
-    if use_split:
-        from coding_agent.split_layout import OutputCapture
-        output_capture: "OutputCapture | None" = OutputCapture()
-    else:
-        output_capture = None
-    renderer = Renderer(output_file=output_capture, capture=output_capture)
+    renderer = Renderer()
     renderer.render_banner(__version__)
 
     try:
@@ -347,140 +333,96 @@ def run(model: str | None, api_base: str | None, temperature: float | None, max_
     # Slash command autocomplete
     slash_completer = SlashCommandCompleter()
 
-    if use_split:
-        from coding_agent.split_layout import SplitLayout
-        from coding_agent.sidebar import make_sidebar_vertical
+    toolbar_func = make_toolbar(
+        conversation=conversation,
+        workflow=current_workflow,
+        branch=branch_name,
+        context_limit=128000,
+    )
 
-        def process_message(text: str) -> None:
-            nonlocal session_data
-            if text.lower() in ("exit", "quit"):
-                split.request_exit()
-                return
-            should_continue = execute_command(
-                text, conversation, session_manager, renderer, llm_client, agent
-            )
-            if should_continue is not None:
-                return
-            if session_data is None:
-                session_data = session_manager.create_session(
-                    first_message=text,
-                    model=config.model,
-                    messages=conversation.get_messages(),
-                )
-                renderer.print_info(f"Session created: {session_data['title']}")
-                agent.set_session(session_manager, session_data)
-            renderer.render_user_message(text)
-            agent.run(text)
-            renderer.render_status_line(
-                config.model,
-                conversation.token_count,
-                session_data.get("id") if session_data else None,
-            )
+    from coding_agent.interrupt import get_interrupt_handler, trigger_interrupt
+    interrupt_handler = get_interrupt_handler()
+    interrupt_handler.start_keyboard_listener()
 
-        sidebar_func = make_sidebar_vertical(
-            conversation, current_workflow, branch_name, context_limit=128000
-        )
-        split = SplitLayout(
-            output_capture=output_capture,
-            sidebar_func=sidebar_func,
-            process_message=process_message,
+    def handle_interrupt():
+        """Handle interrupt signal."""
+        trigger_interrupt()
+        renderer.print_warning("\n\nInterrupted! Type 'exit' to quit or continue chatting.")
+
+    # Try prompt_toolkit, fallback to stdin if it fails (e.g., in non-Windows console)
+    try:
+        from prompt_toolkit.key_binding import KeyBindings
+        from prompt_toolkit.keys import Keys
+
+        key_bindings = KeyBindings()
+
+        @key_bindings.add('c-c', filter=True)
+        def _(event):
+            """Handle Ctrl+C."""
+            handle_interrupt()
+            event.app.exit(exception=KeyboardInterrupt)
+
+        @key_bindings.add('escape')
+        def _(event):
+            """Handle ESC key."""
+            handle_interrupt()
+            event.app.current_buffer.text = ""
+
+        session = PromptSession(
             completer=slash_completer,
+            complete_while_typing=True,
+            style=PROMPT_STYLE,
+            key_bindings=key_bindings,
         )
-        output_capture._on_update = split._schedule_invalidate
-        agent.permissions.set_output_file(output_capture)
-        agent.permissions.set_prompt_callback(split.make_permission_callback())
-        split.run()
-    else:
-        toolbar_func = make_toolbar(
-            conversation=conversation,
-            workflow=current_workflow,
-            branch=branch_name,
-            context_limit=128000,
-        )
+        input_func = lambda: session.prompt(STYLED_PROMPT, rprompt=toolbar_func)
+    except Exception:
+        # Fallback for non-Windows console environments
+        input_func = lambda: input("You > ")
 
-        from coding_agent.interrupt import get_interrupt_handler, trigger_interrupt
-        interrupt_handler = get_interrupt_handler()
-        interrupt_handler.start_keyboard_listener()
-
-        def handle_interrupt():
-            """Handle interrupt signal."""
-            trigger_interrupt()
-            renderer.print_warning("\n\nInterrupted! Type 'exit' to quit or continue chatting.")
-
-        # Try prompt_toolkit, fallback to stdin if it fails (e.g., in non-Windows console)
+    while True:
         try:
-            from prompt_toolkit.key_binding import KeyBindings
-            from prompt_toolkit.keys import Keys
+            text = input_func()
+        except KeyboardInterrupt:
+            renderer.print_info("\nUse Ctrl+D or type 'exit' to quit.")
+            continue
+        except EOFError:
+            conversation.clear()
+            break
 
-            key_bindings = KeyBindings()
+        text = text.strip()
+        if not text:
+            continue
 
-            @key_bindings.add('c-c', filter=True)
-            def _(event):
-                """Handle Ctrl+C."""
-                handle_interrupt()
-                event.app.exit(exception=KeyboardInterrupt)
+        # Handle bare exit/quit commands
+        if text.lower() in ("exit", "quit"):
+            break
 
-            @key_bindings.add('escape')
-            def _(event):
-                """Handle ESC key."""
-                handle_interrupt()
-                event.app.current_buffer.text = ""
+        # Check for slash commands
+        should_continue = execute_command(text, conversation, session_manager, renderer, llm_client, agent)
+        if should_continue is False:
+            break
+        if should_continue is True:
+            continue
 
-            session = PromptSession(
-                completer=slash_completer,
-                complete_while_typing=True,
-                style=PROMPT_STYLE,
-                key_bindings=key_bindings,
+        # Regular message - create session if needed
+        if session_data is None:
+            session_data = session_manager.create_session(
+                first_message=text,
+                model=config.model,
+                messages=conversation.get_messages()
             )
-            input_func = lambda: session.prompt(STYLED_PROMPT, rprompt=toolbar_func)
-        except Exception:
-            # Fallback for non-Windows console environments
-            input_func = lambda: input("You > ")
+            renderer.print_info(f"Session created: {session_data['title']}")
+            agent.set_session(session_manager, session_data)
 
-        while True:
-            try:
-                text = input_func()
-            except KeyboardInterrupt:
-                renderer.print_info("\nUse Ctrl+D or type 'exit' to quit.")
-                continue
-            except EOFError:
-                conversation.clear()
-                break
-
-            text = text.strip()
-            if not text:
-                continue
-
-            # Handle bare exit/quit commands
-            if text.lower() in ("exit", "quit"):
-                break
-
-            # Check for slash commands
-            should_continue = execute_command(text, conversation, session_manager, renderer, llm_client, agent)
-            if should_continue is False:
-                break
-            if should_continue is True:
-                continue
-
-            # Regular message - create session if needed
-            if session_data is None:
-                session_data = session_manager.create_session(
-                    first_message=text,
-                    model=config.model,
-                    messages=conversation.get_messages()
-                )
-                renderer.print_info(f"Session created: {session_data['title']}")
-                agent.set_session(session_manager, session_data)
-
-            # Delegate to Agent for ReAct loop
-            try:
-                agent.run(text)
-                # Show status line after response
-                token_count = conversation.token_count
-                session_id = session_data.get("id") if session_data else None
-                renderer.render_status_line(config.model, token_count, session_id)
-            except ConnectionError as e:
-                renderer.print_error(str(e))
+        # Delegate to Agent for ReAct loop
+        try:
+            agent.run(text)
+            # Show status line after response
+            token_count = conversation.token_count
+            session_id = session_data.get("id") if session_data else None
+            renderer.render_status_line(config.model, token_count, session_id)
+        except ConnectionError as e:
+            renderer.print_error(str(e))
 
 
 # Alias for test compatibility

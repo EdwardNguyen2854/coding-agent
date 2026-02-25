@@ -2,7 +2,6 @@
 
 import re
 from pathlib import Path
-from typing import IO
 
 
 DESTRUCTIVE_PATTERNS = [
@@ -35,15 +34,6 @@ class PermissionSystem:
         self.approved_operations = {}
         self.auto_allow = auto_allow
         self._prompt_callback = None
-        self._output_file: IO | None = None
-
-    def set_output_file(self, output_file: IO) -> None:
-        """Set output file for TUI capture.
-
-        Args:
-            output_file: File-like object to write prompts to.
-        """
-        self._output_file = output_file
 
     def set_prompt_callback(self, callback) -> None:
         """Set a callback for async prompting in TUI context.
@@ -122,12 +112,10 @@ class PermissionSystem:
             return self._prompt_callback(tool_name, params, False)
 
         prompt_text = f"\nAllow {tool_name}? [Y/n]: "
-        if self._output_file:
-            self._output_file.write(prompt_text)
-            self._output_file.flush()
-            response = input().strip().lower()
-        else:
+        try:
             response = input(prompt_text).strip().lower()
+        except EOFError:
+            return False
         if response in ("", "y", "yes"):
             self.approve(tool_name, params)
             return True
@@ -148,23 +136,16 @@ class PermissionSystem:
             self.renderer.print_error(f"Tool: {tool_name}")
             self.renderer.print_error(f"Parameters: {params}")
         else:
-            warning = "\n⚠️  WARNING: This command may delete or overwrite files!"
-            if self._output_file:
-                self._output_file.write(warning + "\n")
-                self._output_file.flush()
-            else:
-                print(warning)
+            print("\n⚠️  WARNING: This command may delete or overwrite files!")
 
         if self._prompt_callback:
             return self._prompt_callback(tool_name, params, True)
 
         prompt_text = f"Allow {tool_name}? [Y/n]: "
-        if self._output_file:
-            self._output_file.write(prompt_text)
-            self._output_file.flush()
-            response = input().strip().lower()
-        else:
+        try:
             response = input(prompt_text).strip().lower()
+        except EOFError:
+            return False
         if response in ("", "y", "yes"):
             return True
         return False

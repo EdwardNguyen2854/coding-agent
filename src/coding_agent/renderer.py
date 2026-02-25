@@ -1,8 +1,11 @@
 """Rich terminal output helpers for the CLI."""
 
-import contextlib
 import difflib
-import io
+
+_LIVE_REFRESH_HZ = 8
+_MAX_DIFF_LINES = 80
+_MAX_ARG_DISPLAY = 50
+_SHORT_SESSION_ID_LEN = 12
 
 from rich.align import Align
 from rich.console import Console
@@ -15,20 +18,43 @@ from rich.status import Status
 from rich.text import Text
 
 
+class _LazyMarkdown:
+    """Renderable that rebuilds Markdown only when text has changed.
+
+    Rich Live calls ``__rich_console__`` at most ``refresh_per_second`` times.
+    This avoids building a new ``Markdown`` object on every token received.
+    """
+
+    def __init__(self) -> None:
+        self._text = ""
+        self._cached: Markdown | None = None
+
+    def append(self, delta: str) -> None:
+        """Append new text and invalidate the cache."""
+        self._text += delta
+        self._cached = None
+
+    def __rich_console__(self, console, options):
+        if self._cached is None:
+            self._cached = Markdown(self._text)
+        yield from self._cached.__rich_console__(console, options)
+
+
 class StreamingDisplay:
     """Progressive markdown streaming display using Rich Live.
 
     Context manager that accumulates streamed text and re-renders
-    it as Rich Markdown on each update.
+    it as Rich Markdown at most ``refresh_per_second`` times per second
+    via ``_LazyMarkdown`` (not once per token).
     """
 
     def __init__(self, console: Console) -> None:
         self._console = console
-        self._text = ""
+        self._renderable = _LazyMarkdown()
         self._live = Live(
-            "",
+            self._renderable,
             console=console,
-            refresh_per_second=8,
+            refresh_per_second=_LIVE_REFRESH_HZ,
             vertical_overflow="visible",
         )
 
@@ -44,14 +70,13 @@ class StreamingDisplay:
         pass  # Removed "Thinking..." text to keep conversation cleaner
 
     def update(self, delta: str) -> None:
-        """Append new text and re-render the full markdown."""
-        self._text += delta
-        self._live.update(Markdown(self._text))
+        """Append new text; Markdown is rebuilt only on the next Live refresh."""
+        self._renderable.append(delta)
 
     @property
     def full_text(self) -> str:
         """Return the accumulated text."""
-        return self._text
+        return self._renderable._text
 
 
 class PlainStreamingDisplay:
@@ -84,83 +109,24 @@ class PlainStreamingDisplay:
         return self._text
 
 
-class CapturedStreamingDisplay:
-    """Streaming display that renders markdown to an output file.
-
-    Used in split-pane mode. During streaming, raw tokens are written for
-    immediate feedback. On exit, the raw tokens are replaced with Rich
-    Markdown-rendered output so that bold, code blocks, etc. display correctly.
-    """
-
-    def __init__(self, output_file: io.TextIOBase, capture: "object | None" = None) -> None:
-        self._output_file = output_file
-        self._capture = capture  # OutputCapture instance for clearing raw tokens
-        self._text = ""
-        self._token_count = 0  # number of raw write() calls to roll back
-
-    def __enter__(self) -> "CapturedStreamingDisplay":
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        if not self._text:
-            return
-        # Roll back the raw tokens from the capture buffer and replace
-        # with Rich Markdown-rendered output.
-        if self._capture is not None and self._token_count > 0:
-            self._capture._roll_back(self._token_count)
-        # Render markdown through a Rich Console targeting the output file
-        console = Console(
-            file=self._output_file, force_terminal=True, highlight=False,
-            width=120,
-        )
-        console.print(Markdown(self._text))
-
-    def start_thinking(self) -> None:
-        """No-op for captured display."""
-
-    def update(self, delta: str) -> None:
-        """Write delta directly to the output file for immediate feedback.
-
-        Args:
-            delta: New text chunk to write.
-        """
-        self._text += delta
-        self._output_file.write(delta)
-        self._output_file.flush()
-        self._token_count += 1
-
-    @property
-    def full_text(self) -> str:
-        """Return the accumulated text."""
-        return self._text
-
-
 class Renderer:
     """Render markdown and styled status/error output in terminal."""
 
-    def __init__(self, output_file: io.TextIOBase | None = None, capture: "object | None" = None) -> None:
-        self._output_file = output_file
-        self._capture = capture  # OutputCapture for CapturedStreamingDisplay rollback
-        if output_file is not None:
-            self.console = Console(file=output_file, force_terminal=True, highlight=False)
-        else:
-            self.console = Console()
+    def __init__(self) -> None:
+        self.console = Console()
 
     def render_markdown(self, text: str) -> None:
         """Render markdown content with Rich formatting."""
         self.console.print(Markdown(text))
 
-    def render_streaming_live(self) -> "StreamingDisplay | PlainStreamingDisplay | CapturedStreamingDisplay":
+    def render_streaming_live(self) -> "StreamingDisplay | PlainStreamingDisplay":
         """Return a streaming display context manager.
 
-        Uses CapturedStreamingDisplay when output is captured (split-pane mode),
-        Rich Live for interactive terminals, plain print for piped/dumb terminals.
+        Uses Rich Live for interactive terminals, plain print for piped/dumb terminals.
 
         Returns:
             A streaming display context manager.
         """
-        if self._output_file is not None:
-            return CapturedStreamingDisplay(self._output_file, capture=self._capture)
         if self.console.is_terminal:
             return StreamingDisplay(self.console)
         return PlainStreamingDisplay()
@@ -181,20 +147,15 @@ class Renderer:
         """Print a styled success message."""
         self.console.print(f"[green]{message}[/green]", highlight=False)
 
-    def status_spinner(self, message: str) -> "Status | contextlib.AbstractContextManager":
+    def status_spinner(self, message: str) -> "Status":
         """Return a spinner context manager for status display.
-
-        Returns a no-op context manager in captured mode to avoid
-        cursor-movement ANSI codes appearing as garbage in the output buffer.
 
         Args:
             message: Status message to display.
 
         Returns:
-            A Rich Status spinner, or a no-op context manager in captured mode.
+            A Rich Status spinner.
         """
-        if self._output_file is not None:
-            return contextlib.nullcontext()
         return self.console.status(message)
 
     def render_separator(self) -> None:
@@ -257,7 +218,7 @@ class Renderer:
         if token_count is not None:
             parts.append(f"{token_count:,} tokens")
         if session_id is not None:
-            short_id = session_id[:12] + "..." if len(session_id) > 12 else session_id
+            short_id = session_id[:_SHORT_SESSION_ID_LEN] + "..." if len(session_id) > _SHORT_SESSION_ID_LEN else session_id
             parts.append(short_id)
 
         line = Text(" | ".join(parts), style="dim")
@@ -273,8 +234,8 @@ class Renderer:
         self.console.print(f"[bold cyan]◆[/bold cyan] [cyan]{tool_name}[/cyan]")
         for key, value in tool_args.items():
             value_str = str(value)
-            if len(value_str) > 50:
-                value_str = value_str[:47] + "..."
+            if len(value_str) > _MAX_ARG_DISPLAY:
+                value_str = value_str[:_MAX_ARG_DISPLAY - 3] + "..."
             self.console.print(f"  [dim]{key}[/dim]: {value_str}", highlight=False)
 
     def render_diff_preview(self, old_content: str, new_content: str, file_path: str = "") -> None:
@@ -294,8 +255,8 @@ class Renderer:
         ))
         if not diff:
             return
-        diff_text = "".join(diff[:80])
-        if len(diff) > 80:
-            diff_text += f"\n  ... ({len(diff) - 80} more lines)"
+        diff_text = "".join(diff[:_MAX_DIFF_LINES])
+        if len(diff) > _MAX_DIFF_LINES:
+            diff_text += f"\n  ... ({len(diff) - _MAX_DIFF_LINES} more lines)"
         self.console.print(Syntax(diff_text, "diff", theme="ansi_dark"))
 

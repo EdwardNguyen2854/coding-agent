@@ -1,9 +1,16 @@
 """Conversation management for LLM context."""
 
 import json
+import logging
 from typing import Any
 
 import litellm
+
+_log = logging.getLogger(__name__)
+
+_MAX_TOOL_OUTPUT_CHARS = 1000
+_MAX_TOOL_RESULT_PREVIEW = 300
+_TOOL_CALL_TOKEN_OVERHEAD = 50
 
 
 class ConversationManager:
@@ -20,6 +27,11 @@ class ConversationManager:
             {"role": "system", "content": system_prompt}
         ]
         self._model = model
+        self._token_cache: int | None = None
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate the token count cache."""
+        self._token_cache = None
 
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the conversation history.
@@ -32,6 +44,7 @@ class ConversationManager:
         message: dict[str, Any] = {"role": role, "content": content}
         message.update(kwargs)
         self._messages.append(message)
+        self._invalidate_cache()
 
     def add_assistant_tool_call(self, content: str, tool_calls: list[dict]) -> None:
         """Add an assistant message that includes native tool_calls.
@@ -57,6 +70,7 @@ class ConversationManager:
             ],
         }
         self._messages.append(message)
+        self._invalidate_cache()
 
     def add_tool_result(self, tool_call_id: str, content: str) -> None:
         """Add a tool result message.
@@ -70,6 +84,7 @@ class ConversationManager:
             "tool_call_id": tool_call_id,
             "content": content,
         })
+        self._invalidate_cache()
 
     def get_messages(self) -> list[dict[str, Any]]:
         """Return all messages for LLM API."""
@@ -96,7 +111,7 @@ class ConversationManager:
                     i += 1
                     tool_content = self._messages[i].get("content", "")
                     if tool_content:
-                        parts.append(f"[Result: {tool_content[:300]}]")
+                        parts.append(f"[Result: {tool_content[:_MAX_TOOL_RESULT_PREVIEW]}]")
                 simplified.append({
                     "role": "assistant",
                     "content": "\n".join(p for p in parts if p) or "[Tool call]",
@@ -119,11 +134,15 @@ class ConversationManager:
         Args:
             max_tokens: Maximum estimated tokens before truncation (default: 128K)
         """
-        while self._estimate_tokens() > max_tokens:
+        prev_estimate = -1
+        while True:
+            estimate = self._estimate_tokens()
+            if estimate <= max_tokens or estimate == prev_estimate:
+                break
+            prev_estimate = estimate
             # Step 1: Try to prune tool outputs first
             if self._prune_oldest_tool_output():
                 continue
-
             # Step 2: Remove oldest message pair (user + assistant + their tool results)
             if not self._remove_oldest_message_pair():
                 break  # Nothing more to remove
@@ -137,9 +156,8 @@ class ConversationManager:
         for i, msg in enumerate(self._messages):
             if msg.get("role") == "tool":
                 content = msg.get("content", "")
-                if content and len(content) > 1000:
-                    # Truncate tool output to 1000 chars
-                    msg["content"] = content[:1000] + "\n...[truncated]"
+                if content and len(content) > _MAX_TOOL_OUTPUT_CHARS:
+                    msg["content"] = content[:_MAX_TOOL_OUTPUT_CHARS] + "\n...[truncated]"
                     return True
         return False
 
@@ -195,15 +213,18 @@ class ConversationManager:
             total += len(content) // 4
             # Add overhead for tool_calls
             if m.get("tool_calls"):
-                total += 50  # Approximate overhead per tool call
+                total += _TOOL_CALL_TOKEN_OVERHEAD
         return total
 
     def clear(self) -> None:
         """Clear all non-system messages (called on session end)."""
         system_prompt = self._messages[0]["content"] if self._messages else ""
         self._messages = [{"role": "system", "content": system_prompt}]
+        self._invalidate_cache()
 
     @property
     def token_count(self) -> int:
-        """Return current estimated token count."""
-        return self._estimate_tokens()
+        """Return current estimated token count (cached between mutations)."""
+        if self._token_cache is None:
+            self._token_cache = self._estimate_tokens()
+        return self._token_cache

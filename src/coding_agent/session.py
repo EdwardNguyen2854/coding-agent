@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_log = logging.getLogger(__name__)
+
 DEFAULT_SESSIONS_DIR = Path.home() / ".coding-agent" / "sessions"
 DEFAULT_SESSION_CAP = 50
+_MAX_TITLE_LEN = 80
 
 
 class SessionManager:
@@ -42,8 +46,8 @@ class SessionManager:
         return str(uuid.uuid4())
 
     def _generate_title(self, first_message: str) -> str:
-        """Generate session title from first user message, truncated to 80 chars."""
-        return first_message[:80] if first_message else "Untitled Session"
+        """Generate session title from first user message, truncated to _MAX_TITLE_LEN chars."""
+        return first_message[:_MAX_TITLE_LEN] if first_message else "Untitled Session"
 
     def _get_session_path(self, session_id: str) -> Path:
         """Get path for a session file."""
@@ -148,7 +152,8 @@ class SessionManager:
                     "model": data.get("model", "unknown"),
                     "token_count": data.get("token_count", 0),
                 })
-            except (json.JSONDecodeError, OSError):
+            except (json.JSONDecodeError, OSError) as e:
+                _log.debug("Skipping session %s: %s", session_file, e)
                 continue
 
         sessions.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
