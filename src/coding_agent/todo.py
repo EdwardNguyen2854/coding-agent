@@ -6,6 +6,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from coding_agent.config import DEFAULT_DOCS_DIR
+
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
@@ -143,7 +145,7 @@ class TodoStore:
     """Persists todo list to disk."""
 
     def __init__(self, base_path: Path | None = None):
-        self._base_path = base_path or Path.cwd() / ".coding-agent" / "docs"
+        self._base_path = base_path or DEFAULT_DOCS_DIR
 
     def save(self, todos: TodoList, name: str = "todo-list") -> Path:
         """Save todo list to JSON file."""

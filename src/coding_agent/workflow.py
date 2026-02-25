@@ -5,6 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from coding_agent.config import DEFAULT_DOCS_DIR
 from coding_agent.todo import TodoItem, TodoList
 
 
@@ -87,7 +88,7 @@ class Workflow:
         self.current_plan: Plan | None = None
         self.todo_list = TodoList()
         self.context_limit = context_limit
-        self._docs_path = Path.cwd() / ".coding-agent" / "docs"
+        self._docs_path = DEFAULT_DOCS_DIR
         self._docs_path.mkdir(parents=True, exist_ok=True)
 
     def get_context_usage(self, token_count: int) -> tuple[int, float]:

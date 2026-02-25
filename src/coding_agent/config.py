@@ -8,6 +8,14 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 DEFAULT_CONFIG_DIR = Path.home() / ".coding-agent"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.yaml"
 
+
+def get_docs_dir(cwd: Path | None = None) -> Path:
+    """Get the docs directory for the current workspace."""
+    return (cwd or Path.cwd()) / ".coding-agent" / "docs"
+
+
+DEFAULT_DOCS_DIR = get_docs_dir()
+
 OLLAMA_DEFAULT_API_BASE = "http://localhost:11434"
 
 
@@ -210,3 +218,31 @@ def apply_cli_overrides(
         raise ConfigError(
             f"Invalid CLI override:\n\n{error_text}"
         ) from None
+
+
+def ensure_docs_installed() -> None:
+    """Install default docs to .coding-agent/docs in current workspace if not present."""
+    import shutil
+
+    from importlib.resources import files
+
+    docs_source = files("coding_agent").joinpath("docs")
+    if not docs_source.is_dir():
+        return
+
+    DEFAULT_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+
+    for item in docs_source.iterdir():
+        if item.name == "dev":
+            continue
+        dest = DEFAULT_DOCS_DIR / item.name
+        if item.is_file() and not dest.exists():
+            shutil.copy2(str(item), dest)
+        elif item.is_dir():
+            dest.mkdir(parents=True, exist_ok=True)
+            for subitem in item.iterdir():
+                subdest = dest / subitem.name
+                if subdest.exists():
+                    continue
+                if subitem.is_file():
+                    shutil.copy2(str(subitem), subdest)

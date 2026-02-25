@@ -2,8 +2,19 @@
 
 from pathlib import Path
 
-DEFAULT_CONFIG_DIR = Path.home() / ".coding-agent"
-GLOBAL_INSTRUCTIONS_FILE = DEFAULT_CONFIG_DIR / "AGENTS.md"
+from coding_agent.config import get_docs_dir
+
+def get_global_instructions_path(cwd: Path | None = None) -> Path:
+    """Get the global instructions file path for the current workspace."""
+    return get_docs_dir(cwd).parent.parent / "AGENTS.md"
+
+
+GLOBAL_INSTRUCTIONS_FILE = get_global_instructions_path()
+
+
+def get_agent_docs_dir(cwd: Path | None = None) -> Path:
+    """Get the agent docs directory for the current workspace."""
+    return get_docs_dir(cwd) / "agent"
 
 
 def find_git_root(start_path: Path | None = None) -> Path | None:
@@ -66,14 +77,15 @@ def find_project_instructions(start_path: Path | None = None) -> tuple[Path | No
 
 
 def load_global_instructions() -> str | None:
-    """Load global instructions from ~/.coding-agent/AGENTS.md.
+    """Load global instructions from .coding-agent/AGENTS.md.
     
     Returns:
         Content of global instructions file or None if not found.
     """
-    if GLOBAL_INSTRUCTIONS_FILE.is_file():
+    global_path = get_global_instructions_path()
+    if global_path.is_file():
         try:
-            return GLOBAL_INSTRUCTIONS_FILE.read_text(encoding="utf-8")
+            return global_path.read_text(encoding="utf-8")
         except OSError:
             pass
     
@@ -83,7 +95,7 @@ def load_global_instructions() -> str | None:
 def get_enhanced_system_prompt(default_prompt: str) -> tuple[str, list[str]]:
     """Get system prompt with project and global instructions prepended.
     
-    Precedence: Project > Global > Default
+    Precedence: Project > Global > Agent Docs > Default
     
     Args:
         default_prompt: The default system prompt to enhance.
@@ -102,7 +114,36 @@ def get_enhanced_system_prompt(default_prompt: str) -> tuple[str, list[str]]:
     global_content = load_global_instructions()
     if global_content:
         parts.insert(0, f"\n\n# Global Instructions\n\n{global_content}")
-        loaded_files.append(str(GLOBAL_INSTRUCTIONS_FILE))
+        loaded_files.append(str(get_global_instructions_path()))
+    
+    agent_docs = load_agent_docs()
+    if agent_docs:
+        parts.insert(0, f"\n\n# Agent Documentation\n\n{agent_docs}")
+        loaded_files.append(str(get_agent_docs_dir()))
     
     enhanced = "\n".join(parts)
     return enhanced, loaded_files
+
+
+def load_agent_docs() -> str | None:
+    """Load all .md files from .coding-agent/docs/agent into system prompt.
+    
+    Returns:
+        Combined content of all agent docs or None if directory doesn't exist.
+    """
+    agent_docs_dir = get_agent_docs_dir()
+    if not agent_docs_dir.is_dir():
+        return None
+    
+    docs: list[str] = []
+    for md_file in sorted(agent_docs_dir.glob("*.md")):
+        try:
+            content = md_file.read_text(encoding="utf-8")
+            docs.append(f"\n\n## {md_file.stem}\n\n{content}")
+        except OSError:
+            continue
+    
+    if not docs:
+        return None
+    
+    return "\n".join(docs)

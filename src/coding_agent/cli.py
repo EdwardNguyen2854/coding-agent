@@ -29,7 +29,7 @@ from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.styles import Style as PTStyle
 
 from coding_agent.agent import Agent
-from coding_agent.config import ConfigError, OLLAMA_DEFAULT_API_BASE, apply_cli_overrides
+from coding_agent.config import ConfigError, OLLAMA_DEFAULT_API_BASE, apply_cli_overrides, ensure_docs_installed
 from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
 from coding_agent.project_instructions import get_enhanced_system_prompt
@@ -211,6 +211,7 @@ def skills(choice):
               help="Use a local Ollama model, e.g. llama3.2 or qwen2.5-coder:7b")
 def run(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
+    ensure_docs_installed()
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
 
     # Resolve --ollama shorthand into model + api_base overrides

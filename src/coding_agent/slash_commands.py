@@ -11,7 +11,7 @@ import litellm
 from prompt_toolkit.completion import Completer, Completion
 from rich.table import Table
 
-from coding_agent.config import DEFAULT_CONFIG_FILE, SkillSetting, load_config
+from coding_agent.config import DEFAULT_CONFIG_FILE, DEFAULT_DOCS_DIR, SkillSetting, load_config
 from coding_agent.conversation import ConversationManager
 from coding_agent.llm import LLMClient
 from coding_agent.project_instructions import find_git_root
@@ -264,10 +264,10 @@ Please create a detailed plan with:
 2. Description of what will be built
 3. A list of specific tasks that need to be done
 
-Save this plan to .coding-agent/docs/implementation-plan.md and then tell me the plan is ready for approval.""")
+Save this plan to {DEFAULT_DOCS_DIR / "implementation-plan.md"} and then tell me the plan is ready for approval.""")
 
     # Check if plan file was created and load it
-    plan_path = Path(".coding-agent/docs/implementation-plan.md")
+    plan_path = DEFAULT_DOCS_DIR / "implementation-plan.md"
     if plan_path.exists():
         content = plan_path.read_text(encoding="utf-8")
         workflow.current_plan = Plan.from_markdown(content)
