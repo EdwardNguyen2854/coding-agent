@@ -66,6 +66,6 @@ Each session stores message history, model, timestamps, and token estimate.
 
 ## Related docs
 
-- Setup and troubleshooting: `docs/INSTALLATION.md`
-- Skills usage: `docs/SKILL-USAGE.md`
+- Setup and troubleshooting: `docs/user/INSTALLATION.md`
+- Skills usage: `docs/user/SKILL-USAGE.md`
 - Project motivation and architecture: `README.md`

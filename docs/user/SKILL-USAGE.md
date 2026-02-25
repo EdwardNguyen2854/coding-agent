@@ -87,7 +87,7 @@ These settings are stored in `~/.coding-agent/config.yaml` under `skills`.
 
 ## Related docs
 
-- Installation and environment setup: `docs/INSTALLATION.md`
-- Runtime flags and slash commands: `docs/CLI-REFERENCE.md`
+- Installation and environment setup: `docs/user/INSTALLATION.md`
+- Runtime flags and slash commands: `docs/user/CLI-REFERENCE.md`
 - Project motivation and roadmap context: `README.md`
 - License: `LICENSE`

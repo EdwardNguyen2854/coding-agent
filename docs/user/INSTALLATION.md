@@ -128,7 +128,7 @@ Install ripgrep and reopen terminal so PATH refreshes.
 
 ## Related docs
 
-- CLI flags and slash commands: `docs/CLI-REFERENCE.md`
-- Skill authoring and loading: `docs/SKILL-USAGE.md`
+- CLI flags and slash commands: `docs/user/CLI-REFERENCE.md`
+- Skill authoring and loading: `docs/user/SKILL-USAGE.md`
 - Project overview and motivation: `README.md`
 - License: `LICENSE`
