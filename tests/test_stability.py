@@ -8,7 +8,7 @@ class TestPermissionEOF:
 
     def test_permission_prompt_handles_eof(self):
         """_prompt_user returns False when input() raises EOFError."""
-        from coding_agent.permissions import PermissionSystem
+        from coding_agent.core.permissions import PermissionSystem
 
         ps = PermissionSystem()
         with patch("builtins.input", side_effect=EOFError):
@@ -17,7 +17,7 @@ class TestPermissionEOF:
 
     def test_permission_prompt_with_warning_handles_eof(self):
         """_prompt_with_warning returns False when input() raises EOFError."""
-        from coding_agent.permissions import PermissionSystem
+        from coding_agent.core.permissions import PermissionSystem
 
         ps = PermissionSystem()
         with patch("builtins.input", side_effect=EOFError):
@@ -30,7 +30,7 @@ class TestTruncateLoop:
 
     def test_truncate_terminates_on_no_progress(self):
         """Loop exits when removal returns False immediately (nothing to prune)."""
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
 
         conv = ConversationManager("system prompt")
         # Patch _estimate_tokens to always return a large value and
@@ -46,7 +46,7 @@ class TestTruncateLoop:
 
     def test_truncate_exits_when_estimate_stagnates(self):
         """Loop exits when estimate stops decreasing even if removals return True."""
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
 
         conv = ConversationManager("system prompt")
         call_count = [0]
@@ -69,7 +69,7 @@ class TestDiffPreviewException:
 
     def test_diff_preview_exception_does_not_propagate(self):
         """OSError in diff preview is logged but not raised."""
-        from coding_agent.agent import Agent
+        from coding_agent.core.agent import Agent
 
         llm_client = MagicMock()
         conversation = MagicMock()
@@ -102,7 +102,7 @@ class TestDiffPreviewException:
         mock_result.error = None
         mock_result.output = "ok"
         mock_result.message = ""  # Add message attribute
-        with patch("coding_agent.agent.execute_tool", return_value=mock_result):
+        with patch("coding_agent.core.agent.execute_tool", return_value=mock_result):
             with patch("pathlib.Path.exists", return_value=True):
                 with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):
                     # Should not raise

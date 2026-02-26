@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from coding_agent.config import DEFAULT_DOCS_DIR
+from coding_agent.config.config import DEFAULT_DOCS_DIR
 
 
 class TaskStatus(str, Enum):

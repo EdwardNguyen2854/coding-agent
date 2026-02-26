@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from coding_agent.skills import (
+from coding_agent.config.skills import (
     Skill,
     find_project_skill_file,
     load_skills,
@@ -136,7 +136,7 @@ class TestLoadSkills:
         skill_file = tmp_path / "SKILL.md"
         skill_file.write_text("# Instructions\nReview the code.")
 
-        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", tmp_path / "nonexistent"):
+        with patch("coding_agent.config.skills.GLOBAL_SKILLS_DIR", tmp_path / "nonexistent"):
             skills, loaded = load_skills(tmp_path)
 
         assert len(skills) >= 1
@@ -155,14 +155,14 @@ class TestLoadSkills:
         project_file = tmp_path / "project" / "SKILL.md"
         project_file.write_text("# Instructions\nProject review.")
 
-        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", global_skills_dir):
+        with patch("coding_agent.config.skills.GLOBAL_SKILLS_DIR", global_skills_dir):
             skills, loaded = load_skills(tmp_path / "project")
 
         assert len(loaded) == 2
 
     def test_returns_empty_when_no_skill_files(self, tmp_path):
         """Returns empty dict when no SKILL.md files exist."""
-        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", tmp_path / "nonexistent"):
+        with patch("coding_agent.config.skills.GLOBAL_SKILLS_DIR", tmp_path / "nonexistent"):
             skills, loaded = load_skills(tmp_path)
 
         assert skills == {}
@@ -176,7 +176,7 @@ class TestLoadSkills:
         global_skill_folder.mkdir()
         (global_skill_folder / "SKILL.md").write_text("# Instructions\nDeploy the app.")
 
-        with patch("coding_agent.skills.GLOBAL_SKILLS_DIR", global_skills_dir):
+        with patch("coding_agent.config.skills.GLOBAL_SKILLS_DIR", global_skills_dir):
             skills, loaded = load_skills(tmp_path)
 
         assert "deploy" in skills

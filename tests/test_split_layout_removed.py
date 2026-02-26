@@ -13,7 +13,7 @@ def test_split_layout_not_importable():
 
 def test_renderer_takes_no_args():
     """Renderer() constructor must accept zero arguments."""
-    from coding_agent.renderer import Renderer
+    from coding_agent.ui.renderer import Renderer
     sig = inspect.signature(Renderer.__init__)
     # Only 'self' parameter
     params = [p for p in sig.parameters if p != "self"]
@@ -22,7 +22,7 @@ def test_renderer_takes_no_args():
 
 def test_no_captured_streaming_display_in_renderer():
     """CapturedStreamingDisplay must not be present in the renderer module."""
-    import coding_agent.renderer as renderer_mod
+    import coding_agent.ui.renderer as renderer_mod
     assert not hasattr(renderer_mod, "CapturedStreamingDisplay"), (
         "CapturedStreamingDisplay should have been removed from renderer"
     )
@@ -30,7 +30,7 @@ def test_no_captured_streaming_display_in_renderer():
 
 def test_no_make_sidebar_vertical_in_sidebar():
     """make_sidebar_vertical must not be present in the sidebar module."""
-    import coding_agent.sidebar as sidebar_mod
+    import coding_agent.ui.sidebar as sidebar_mod
     assert not hasattr(sidebar_mod, "make_sidebar_vertical"), (
         "make_sidebar_vertical should have been removed from sidebar"
     )
@@ -38,7 +38,7 @@ def test_no_make_sidebar_vertical_in_sidebar():
 
 def test_no_set_output_file_in_permissions():
     """PermissionSystem.set_output_file must not exist."""
-    from coding_agent.permissions import PermissionSystem
+    from coding_agent.core.permissions import PermissionSystem
     assert not hasattr(PermissionSystem, "set_output_file"), (
         "set_output_file should have been removed from PermissionSystem"
     )

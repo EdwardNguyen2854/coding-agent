@@ -1,6 +1,6 @@
 """Tests for ConversationManager."""
 
-from coding_agent.conversation import ConversationManager
+from coding_agent.core.conversation import ConversationManager
 
 
 class TestConversationManager:

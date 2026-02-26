@@ -14,7 +14,7 @@ from coding_agent.workflow.checkpoint import CheckpointManager
 from coding_agent.workflow.registry import WorkflowRegistry, WorkflowRegistryEntry
 from coding_agent.workflow.native_loader import NativeWorkflowLoader
 
-from coding_agent.workflow_impl import (
+from coding_agent.state.workflow_impl import (
     Plan,
     Workflow,
     WorkflowManager,

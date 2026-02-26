@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_result import ToolResult
 
 
 class TestToolResultFields:

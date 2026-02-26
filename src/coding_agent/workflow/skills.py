@@ -1,4 +1,4 @@
-from coding_agent.skills import Skill, load_skills
+from coding_agent.config.skills import Skill, load_skills
 
 
 class SkillResolver:

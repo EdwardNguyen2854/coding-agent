@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_result import ToolResult
 
 
 @dataclass

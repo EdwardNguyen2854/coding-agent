@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from coding_agent.config import get_docs_dir
+from coding_agent.config.config import get_docs_dir
 
 def get_global_instructions_path(cwd: Path | None = None) -> Path:
     """Get the global instructions file path for the current workspace."""

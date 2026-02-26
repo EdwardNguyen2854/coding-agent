@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from coding_agent.tool_guard import ToolGuard
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_guard import ToolGuard
+from coding_agent.core.tool_result import ToolResult
 
 STATE_SET_SCHEMA = {
     "name": "state_set",

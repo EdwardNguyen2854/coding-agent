@@ -8,13 +8,13 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-from coding_agent.renderer import PlainStreamingDisplay, Renderer, StreamingDisplay
+from coding_agent.ui.renderer import PlainStreamingDisplay, Renderer, StreamingDisplay
 
 
 class TestRenderer:
     """Verify Renderer behavior for markdown and status output."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_markdown_prints_markdown(self, mock_console_cls):
         """render_markdown() prints a Markdown object."""
         mock_console = MagicMock()
@@ -27,7 +27,7 @@ class TestRenderer:
         rendered = mock_console.print.call_args.args[0]
         assert isinstance(rendered, Markdown)
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_markdown_code_blocks_are_passed_to_markdown_renderer(self, mock_console_cls):
         """Markdown with code fences is rendered through Rich Markdown."""
         markdown_with_code = """```python\nprint(\"hello\")\n```"""
@@ -41,7 +41,7 @@ class TestRenderer:
         assert isinstance(rendered, Markdown)
         assert "```python" in rendered.markup
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_print_error_outputs_styled_message(self, mock_console_cls):
         """print_error() prints red-styled message without auto-highlighting."""
         mock_console = MagicMock()
@@ -52,7 +52,7 @@ class TestRenderer:
 
         mock_console.print.assert_called_once_with("[red]boom[/red]", highlight=False)
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_print_info_outputs_styled_message(self, mock_console_cls):
         """print_info() prints dim-styled message without auto-highlighting."""
         mock_console = MagicMock()
@@ -63,7 +63,7 @@ class TestRenderer:
 
         mock_console.print.assert_called_once_with("[dim]Connected[/dim]", highlight=False)
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_status_spinner_returns_console_status_context(self, mock_console_cls):
         """status_spinner() returns the console.status() context manager."""
         mock_console = MagicMock()
@@ -80,7 +80,7 @@ class TestRenderer:
         call_args = mock_console.status.call_args
         assert call_args[0][0] == "Thinking..."
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_status_spinner_cleans_up_on_exception(self, mock_console_cls):
         """Spinner context manager exits when an exception is raised."""
         mock_console = MagicMock()
@@ -100,7 +100,7 @@ class TestRenderer:
 class TestRenderStatusLine:
     """Verify compact status line output."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_status_line_with_all_params(self, mock_console_cls):
         """render_status_line() displays compact single-line with all info."""
         mock_console = MagicMock()
@@ -117,7 +117,7 @@ class TestRenderStatusLine:
         assert "1,234 tokens" in plain
         assert "session-123-" in plain
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_status_line_with_optional_params(self, mock_console_cls):
         """render_status_line() handles None optional parameters."""
         mock_console = MagicMock()
@@ -132,7 +132,7 @@ class TestRenderStatusLine:
         assert "gpt-4" in call_arg.plain
         assert "tokens" not in call_arg.plain
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_status_line_truncates_long_session_id(self, mock_console_cls):
         """Long session IDs are truncated with ellipsis."""
         mock_console = MagicMock()
@@ -148,7 +148,7 @@ class TestRenderStatusLine:
 class TestRenderSeparator:
     """Verify separator rendering."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_separator_prints_dim_rule(self, mock_console_cls):
         """render_separator() prints a dim horizontal Rule."""
         mock_console = MagicMock()
@@ -165,7 +165,7 @@ class TestRenderSeparator:
 class TestRenderBanner:
     """Verify banner rendering."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_banner_prints_panel(self, mock_console_cls):
         """render_banner() prints a slim Rule with version."""
         mock_console = MagicMock()
@@ -183,7 +183,7 @@ class TestRenderBanner:
 class TestRenderConfig:
     """Verify config table rendering."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_config_prints_table(self, mock_console_cls):
         """render_config() prints an inline dim line with config items."""
         mock_console = MagicMock()
@@ -202,7 +202,7 @@ class TestRenderConfig:
 class TestRenderStreamingLive:
     """Verify render_streaming_live() returns correct display type."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_returns_streaming_display_for_terminal(self, mock_console_cls):
         """Returns StreamingDisplay when console is a terminal."""
         mock_console = MagicMock()
@@ -213,7 +213,7 @@ class TestRenderStreamingLive:
         display = renderer.render_streaming_live()
         assert isinstance(display, StreamingDisplay)
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_returns_plain_display_for_non_terminal(self, mock_console_cls):
         """Returns PlainStreamingDisplay when console is not a terminal."""
         mock_console = MagicMock()
@@ -293,7 +293,7 @@ class TestPlainStreamingDisplay:
 class TestRenderToolPanel:
     """Verify tool panel rendering."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_tool_panel_with_args(self, mock_console_cls):
         """render_tool_panel() displays tool name and arguments inline."""
         mock_console = MagicMock()
@@ -309,7 +309,7 @@ class TestRenderToolPanel:
         first_call_arg = mock_console.print.call_args_list[0].args[0]
         assert "file_write" in first_call_arg
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_tool_panel_empty_args(self, mock_console_cls):
         """render_tool_panel() handles empty arguments."""
         mock_console = MagicMock()
@@ -324,7 +324,7 @@ class TestRenderToolPanel:
 class TestRenderDiffPreview:
     """Verify diff preview rendering."""
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_diff_preview_shows_changes(self, mock_console_cls):
         """render_diff_preview() displays unified diff with Syntax."""
         from rich.syntax import Syntax
@@ -340,7 +340,7 @@ class TestRenderDiffPreview:
         call_arg = mock_console.print.call_args.args[0]
         assert isinstance(call_arg, Syntax)
 
-    @patch("coding_agent.renderer.Console")
+    @patch("coding_agent.ui.renderer.Console")
     def test_render_diff_preview_empty_content(self, mock_console_cls):
         """render_diff_preview() handles empty content."""
         mock_console = MagicMock()

@@ -5,8 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from coding_agent.tool_guard import ToolGuard
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_guard import ToolGuard
+from coding_agent.core.tool_result import ToolResult
 
 SCHEMA = {
     "name": "git_diff",
@@ -21,6 +21,7 @@ SCHEMA = {
         },
         "pathspec": {
             "type": "array",
+            "items": {"type": "string"},
             "description": "Limit diff to specific files or paths.",
         },
         "base_ref": {

@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from coding_agent.permissions import PermissionSystem, TOOLS_REQUIRING_APPROVAL
+from coding_agent.core.permissions import PermissionSystem, TOOLS_REQUIRING_APPROVAL
 
 
 class TestPermissionSystemInit:

@@ -400,11 +400,11 @@ class TestCLIIntegration:
         """AC #1: CLI shows error with config path and required fields."""
         from click.testing import CliRunner
 
-        from coding_agent.cli import main
+        from coding_agent.ui.cli import main
 
         fake_path = tmp_path / "nonexistent" / "config.yaml"
         monkeypatch.setattr(
-            "coding_agent.config.DEFAULT_CONFIG_FILE",
+            "coding_agent.config.config.DEFAULT_CONFIG_FILE",
             fake_path,
         )
         runner = CliRunner()
@@ -415,14 +415,14 @@ class TestCLIIntegration:
         assert "model" in combined
         assert "api_base" in combined
 
-    @patch("coding_agent.cli.PromptSession")
-    @patch("coding_agent.cli.LLMClient")
-    @patch("coding_agent.cli.SessionManager")
+    @patch("coding_agent.ui.cli.PromptSession")
+    @patch("coding_agent.ui.cli.LLMClient")
+    @patch("coding_agent.ui.cli.SessionManager")
     def test_cli_valid_config_shows_summary(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC #2: CLI shows config summary on successful load."""
         from click.testing import CliRunner
 
-        from coding_agent.cli import main
+        from coding_agent.ui.cli import main
 
         mock_session.return_value.prompt.side_effect = EOFError()
         mock_llm.return_value.verify_connection.return_value = None
@@ -430,21 +430,21 @@ class TestCLIIntegration:
         config_file.write_text(
             yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
         )
-        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", config_file)
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert result.exit_code == 0
         assert "litellm/gpt-4o" in result.output
         assert "localhost:4000" in result.output
 
-    @patch("coding_agent.cli.PromptSession")
-    @patch("coding_agent.cli.LLMClient")
-    @patch("coding_agent.cli.SessionManager")
+    @patch("coding_agent.ui.cli.PromptSession")
+    @patch("coding_agent.ui.cli.LLMClient")
+    @patch("coding_agent.ui.cli.SessionManager")
     def test_cli_model_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC #3: CLI --model flag overrides config."""
         from click.testing import CliRunner
 
-        from coding_agent.cli import main
+        from coding_agent.ui.cli import main
 
         mock_session.return_value.prompt.side_effect = EOFError()
         mock_llm.return_value.verify_connection.return_value = None
@@ -452,20 +452,20 @@ class TestCLIIntegration:
         config_file.write_text(
             yaml.dump({"model": "default-model", "api_base": "http://localhost:4000"})
         )
-        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", config_file)
         runner = CliRunner()
         result = runner.invoke(main, ["--model", "override-model"])
         assert result.exit_code == 0
         assert "override-model" in result.output
 
-    @patch("coding_agent.cli.PromptSession")
-    @patch("coding_agent.cli.LLMClient")
-    @patch("coding_agent.cli.SessionManager")
+    @patch("coding_agent.ui.cli.PromptSession")
+    @patch("coding_agent.ui.cli.LLMClient")
+    @patch("coding_agent.ui.cli.SessionManager")
     def test_cli_temperature_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC: CLI --temperature flag shows in output."""
         from click.testing import CliRunner
 
-        from coding_agent.cli import main
+        from coding_agent.ui.cli import main
 
         mock_session.return_value.prompt.side_effect = EOFError()
         mock_llm.return_value.verify_connection.return_value = None
@@ -473,20 +473,20 @@ class TestCLIIntegration:
         config_file.write_text(
             yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
         )
-        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", config_file)
         runner = CliRunner()
         result = runner.invoke(main, ["--temperature", "0.7"])
         assert result.exit_code == 0
         assert "0.7" in result.output
 
-    @patch("coding_agent.cli.PromptSession")
-    @patch("coding_agent.cli.LLMClient")
-    @patch("coding_agent.cli.SessionManager")
+    @patch("coding_agent.ui.cli.PromptSession")
+    @patch("coding_agent.ui.cli.LLMClient")
+    @patch("coding_agent.ui.cli.SessionManager")
     def test_cli_max_output_tokens_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC: CLI --max-output-tokens flag shows in output."""
         from click.testing import CliRunner
 
-        from coding_agent.cli import main
+        from coding_agent.ui.cli import main
 
         mock_session.return_value.prompt.side_effect = EOFError()
         mock_llm.return_value.verify_connection.return_value = None
@@ -494,20 +494,20 @@ class TestCLIIntegration:
         config_file.write_text(
             yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
         )
-        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", config_file)
         runner = CliRunner()
         result = runner.invoke(main, ["--max-output-tokens", "8192"])
         assert result.exit_code == 0
         assert "8192" in result.output
 
-    @patch("coding_agent.cli.PromptSession")
-    @patch("coding_agent.cli.LLMClient")
-    @patch("coding_agent.cli.SessionManager")
+    @patch("coding_agent.ui.cli.PromptSession")
+    @patch("coding_agent.ui.cli.LLMClient")
+    @patch("coding_agent.ui.cli.SessionManager")
     def test_cli_top_p_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC: CLI --top-p flag shows in output."""
         from click.testing import CliRunner
 
-        from coding_agent.cli import main
+        from coding_agent.ui.cli import main
 
         mock_session.return_value.prompt.side_effect = EOFError()
         mock_llm.return_value.verify_connection.return_value = None
@@ -515,19 +515,19 @@ class TestCLIIntegration:
         config_file.write_text(
             yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
         )
-        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", config_file)
         runner = CliRunner()
         result = runner.invoke(main, ["--top-p", "0.9"])
         assert result.exit_code == 0
         assert "0.9" in result.output
 
-    @patch("coding_agent.cli.PromptSession")
-    @patch("coding_agent.cli.LLMClient")
+    @patch("coding_agent.ui.cli.PromptSession")
+    @patch("coding_agent.ui.cli.LLMClient")
     def test_cli_api_key_never_shown(self, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC #4: api_key never appears in CLI output."""
         from click.testing import CliRunner
 
-        from coding_agent.cli import main
+        from coding_agent.ui.cli import main
 
         mock_session.return_value.prompt.side_effect = EOFError()
         mock_llm.return_value.verify_connection.return_value = None
@@ -539,7 +539,7 @@ class TestCLIIntegration:
                 "api_key": "sk-super-secret-key-12345",
             })
         )
-        monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", config_file)
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert "sk-super-secret-key-12345" not in result.output

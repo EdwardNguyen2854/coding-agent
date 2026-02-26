@@ -8,7 +8,7 @@ class TestLazyMarkdown:
 
     def test_streaming_markdown_not_rebuilt_per_token(self):
         """Markdown constructor should be called far fewer than 100 times for 100 tokens."""
-        from coding_agent.renderer import StreamingDisplay, _LazyMarkdown
+        from coding_agent.ui.renderer import StreamingDisplay, _LazyMarkdown
 
         console = MagicMock()
 
@@ -19,7 +19,7 @@ class TestLazyMarkdown:
             markdown_init_calls[0] += 1
             original_init(self, *args, **kwargs)
 
-        with patch("coding_agent.renderer.Markdown.__init__", counting_init):
+        with patch("coding_agent.ui.renderer.Markdown.__init__", counting_init):
             lazy = _LazyMarkdown()
             for i in range(100):
                 lazy.append(f"token{i} ")
@@ -35,7 +35,7 @@ class TestLazyMarkdown:
 
     def test_lazy_markdown_caches_between_renders(self):
         """_LazyMarkdown caches the Markdown object between renders without appends."""
-        from coding_agent.renderer import _LazyMarkdown
+        from coding_agent.ui.renderer import _LazyMarkdown
 
         lazy = _LazyMarkdown()
         lazy.append("hello world")
@@ -47,7 +47,7 @@ class TestLazyMarkdown:
             build_count[0] += 1
             original_init(self, *args, **kwargs)
 
-        with patch("coding_agent.renderer.Markdown.__init__", counting_init):
+        with patch("coding_agent.ui.renderer.Markdown.__init__", counting_init):
             fake_console = MagicMock()
             fake_options = MagicMock()
             # Two renders without any append — should only build once
@@ -60,7 +60,7 @@ class TestLazyMarkdown:
 
     def test_lazy_markdown_invalidates_on_append(self):
         """_LazyMarkdown rebuilds Markdown after an append."""
-        from coding_agent.renderer import _LazyMarkdown
+        from coding_agent.ui.renderer import _LazyMarkdown
 
         lazy = _LazyMarkdown()
         lazy.append("first")
@@ -72,7 +72,7 @@ class TestLazyMarkdown:
             build_count[0] += 1
             original_init(self, *args, **kwargs)
 
-        with patch("coding_agent.renderer.Markdown.__init__", counting_init):
+        with patch("coding_agent.ui.renderer.Markdown.__init__", counting_init):
             fake_console = MagicMock()
             fake_options = MagicMock()
             list(lazy.__rich_console__(fake_console, fake_options))  # build 1
@@ -89,7 +89,7 @@ class TestTokenCountCache:
 
     def test_token_count_cache(self):
         """token_count should use cached value after first computation."""
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
 
         conv = ConversationManager("system prompt")
         call_count = [0]
@@ -112,7 +112,7 @@ class TestTokenCountCache:
 
     def test_token_count_invalidates_on_new_message(self):
         """Cache is cleared after add_message."""
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
 
         conv = ConversationManager("system prompt")
         call_count = [0]
@@ -136,7 +136,7 @@ class TestTokenCountCache:
 
     def test_token_count_invalidates_on_tool_result(self):
         """Cache is cleared after add_tool_result."""
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
 
         conv = ConversationManager("system prompt")
         call_count = [0]
@@ -156,7 +156,7 @@ class TestTokenCountCache:
 
     def test_token_count_invalidates_on_clear(self):
         """Cache is cleared after clear()."""
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
 
         conv = ConversationManager("system prompt")
         call_count = [0]

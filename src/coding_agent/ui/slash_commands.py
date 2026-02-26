@@ -12,16 +12,16 @@ from prompt_toolkit.completion import Completer, Completion
 from rich.table import Table
 
 from coding_agent.config import DEFAULT_CONFIG_FILE, DEFAULT_DOCS_DIR, SkillSetting, load_config
-from coding_agent.conversation import ConversationManager
-from coding_agent.llm import LLMClient
-from coding_agent.project_instructions import find_git_root
-from coding_agent.renderer import Renderer
-from coding_agent.session import SessionManager
-from coding_agent.skills import Skill
-from coding_agent.workflow_impl import WorkflowManager, WorkflowState, Plan
+from coding_agent.core.conversation import ConversationManager
+from coding_agent.core.llm import LLMClient
+from coding_agent.config.project_instructions import find_git_root
+from coding_agent.ui.renderer import Renderer
+from coding_agent.state.session import SessionManager
+from coding_agent.config.skills import Skill
+from coding_agent.state.workflow_impl import WorkflowManager, WorkflowState, Plan
 
 if TYPE_CHECKING:
-    from coding_agent.agent import Agent
+    from coding_agent.core.agent import Agent
 
 
 _workflow_manager: WorkflowManager | None = None

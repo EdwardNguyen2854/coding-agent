@@ -4,8 +4,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from coding_agent.tool_guard import ToolGuard
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_guard import ToolGuard
+from coding_agent.core.tool_result import ToolResult
 
 SCHEMA = {
     "name": "git_commit",
@@ -18,6 +18,7 @@ SCHEMA = {
         "message": {"type": "string", "description": "Commit message. Required."},
         "paths": {
             "type": "array",
+            "items": {"type": "string"},
             "description": "Files to auto-stage before committing. If omitted, only already-staged changes are committed.",
         },
         "signoff": {

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from coding_agent.session import SessionManager
+from coding_agent.state.session import SessionManager
 
 
 class TestSessionManager:

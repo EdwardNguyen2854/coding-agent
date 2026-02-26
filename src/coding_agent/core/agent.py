@@ -5,12 +5,12 @@ import logging
 import os
 from typing import Any
 
-from coding_agent.interrupt import is_interrupted
+from coding_agent.ui.interrupt import is_interrupted
 
 _log = logging.getLogger(__name__)
-from coding_agent.permissions import PermissionSystem
+from coding_agent.core.permissions import PermissionSystem
 from coding_agent.tools import execute_tool, get_openai_tools
-from coding_agent.utils import truncate_output
+from coding_agent.config.utils import truncate_output
 
 
 class Agent:
@@ -95,7 +95,7 @@ class Agent:
         Returns:
             The final assistant response
         """
-        from coding_agent.interrupt import clear_interrupt, is_interrupted
+        from coding_agent.ui.interrupt import clear_interrupt, is_interrupted
         clear_interrupt()
 
         self.conversation.add_message("user", user_input)

@@ -7,7 +7,7 @@ from coding_agent.workflow.skills import SkillResolver
 from coding_agent.workflow.state import StateManager
 
 if TYPE_CHECKING:
-    from coding_agent.agent import Agent
+    from coding_agent.core.agent import Agent
 
 
 @dataclass

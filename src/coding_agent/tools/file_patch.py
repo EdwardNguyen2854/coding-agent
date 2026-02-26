@@ -6,8 +6,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from coding_agent.tool_guard import ToolGuard
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_guard import ToolGuard
+from coding_agent.core.tool_result import ToolResult
 
 SCHEMA = {
     "name": "file_patch",
@@ -25,6 +25,7 @@ SCHEMA = {
         },
         "patches": {
             "type": "array",
+            "items": {"type": "object"},
             "description": "Structured patch list. Mutually exclusive with diff_text.",
         },
         "file_hash": {

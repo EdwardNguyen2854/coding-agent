@@ -5,8 +5,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
-from coding_agent.config import DEFAULT_DOCS_DIR
-from coding_agent.todo import TodoItem, TodoList
+from coding_agent.config.config import DEFAULT_DOCS_DIR
+from coding_agent.state.todo import TodoItem, TodoList
 
 
 class WorkflowState(str, Enum):
@@ -141,13 +141,13 @@ class Workflow:
 
     def save_todos(self) -> Path:
         """Save the todo list to disk."""
-        from coding_agent.todo import TodoMarkdownStore
+        from coding_agent.state.todo import TodoMarkdownStore
         store = TodoMarkdownStore()
         return store.save(self.todo_list)
 
     def load_todos(self) -> TodoList | None:
         """Load the todo list from disk."""
-        from coding_agent.todo import TodoMarkdownStore
+        from coding_agent.state.todo import TodoMarkdownStore
         store = TodoMarkdownStore()
         return store.load()
 

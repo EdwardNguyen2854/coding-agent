@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
-from coding_agent.agent import Agent
+from coding_agent.core.agent import Agent
 
 
 def _make_mock_display():
@@ -18,7 +18,7 @@ def _make_mock_display():
 class TestAgent:
     """Test Agent ReAct loop."""
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_agent_initialization(self, mock_get_tools):
         """Agent initializes with required dependencies."""
         mock_llm = MagicMock()
@@ -32,7 +32,7 @@ class TestAgent:
         assert agent.renderer is mock_renderer
         assert agent.max_retries == 3
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_run_sends_user_message(self, mock_get_tools):
         """run() adds user message to conversation."""
         mock_get_tools.return_value = []
@@ -56,7 +56,7 @@ class TestAgent:
 
         mock_conv.add_message.assert_any_call("user", "Hi there")
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_run_terminates_on_text_only(self, mock_get_tools):
         """run() exits loop when no tool_calls."""
         mock_get_tools.return_value = []
@@ -81,7 +81,7 @@ class TestAgent:
         assert result == "Final response"
         mock_conv.add_message.assert_any_call("assistant", "Final response")
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_run_tracks_consecutive_failures(self, mock_get_tools):
         """run() tracks consecutive failures for retry logic."""
         mock_llm = MagicMock()
@@ -92,7 +92,7 @@ class TestAgent:
         assert agent.consecutive_failures == 0
         assert agent.max_retries == 3
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_run_uses_streaming_display(self, mock_get_tools):
         """run() uses render_streaming_live() for streaming output."""
         mock_get_tools.return_value = []
@@ -119,7 +119,7 @@ class TestAgent:
         mock_display.update.assert_called_once_with("Hello")
 
     @pytest.mark.skip(reason="render_separator not implemented in current agent.py")
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_run_renders_separator_after_tool_calls(self, mock_get_tools):
         """run() renders separator after processing tool calls."""
         mock_get_tools.return_value = []
@@ -163,9 +163,9 @@ class TestAgent:
         mock_spinner.__exit__ = MagicMock(return_value=False)
         mock_renderer.status_spinner.return_value = mock_spinner
 
-        with patch("coding_agent.agent.execute_tool") as mock_exec:
+        with patch("coding_agent.core.agent.execute_tool") as mock_exec:
             mock_exec.return_value = MagicMock(is_error=False, error=None, output="file1\nfile2", message="")
-            with patch("coding_agent.agent.PermissionSystem") as mock_perm_cls:
+            with patch("coding_agent.core.agent.PermissionSystem") as mock_perm_cls:
                 mock_perm_cls.return_value.check_approval.return_value = True
                 agent = Agent(mock_llm, mock_conv, mock_renderer)
                 agent.run("list files")
@@ -186,7 +186,7 @@ class TestAgentToolFallback:
         mock_renderer.status_spinner.return_value = mock_spinner
         return mock_renderer
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_has_tool_messages_true_for_tool_role(self, _):
         """_has_tool_messages() returns True when role=tool present."""
         messages = [
@@ -195,7 +195,7 @@ class TestAgentToolFallback:
         ]
         assert Agent._has_tool_messages(messages) is True
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_has_tool_messages_true_for_assistant_tool_calls(self, _):
         """_has_tool_messages() returns True when assistant has tool_calls."""
         messages = [
@@ -203,7 +203,7 @@ class TestAgentToolFallback:
         ]
         assert Agent._has_tool_messages(messages) is True
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_has_tool_messages_false_for_plain_messages(self, _):
         """_has_tool_messages() returns False for plain user/assistant messages."""
         messages = [
@@ -212,10 +212,10 @@ class TestAgentToolFallback:
         ]
         assert Agent._has_tool_messages(messages) is False
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_call_llm_retries_simplified_on_bad_request_with_tool_messages(self, mock_get_tools):
         """_call_llm() retries with simplified history when BadRequestError hits tool-laden history."""
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
 
         mock_get_tools.return_value = []
         mock_llm = MagicMock()
@@ -251,14 +251,14 @@ class TestAgentToolFallback:
         assert call_count[0] == 2  # First attempt + retry
         mock_renderer.print_info.assert_called()  # Retry notice shown
 
-    @patch("coding_agent.agent.get_openai_tools")
+    @patch("coding_agent.core.agent.get_openai_tools")
     def test_call_llm_no_retry_when_no_tool_messages(self, mock_get_tools):
         """_call_llm() does not retry when error occurs without tool messages."""
         mock_get_tools.return_value = []
         mock_llm = MagicMock()
         mock_llm.send_message_stream.side_effect = ConnectionError("Model rejected the request.")
 
-        from coding_agent.conversation import ConversationManager
+        from coding_agent.core.conversation import ConversationManager
         conv = ConversationManager("System")
         conv.add_message("user", "Hello")
 

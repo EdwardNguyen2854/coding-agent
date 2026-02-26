@@ -4,8 +4,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from coding_agent.tool_guard import ToolGuard
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_guard import ToolGuard
+from coding_agent.core.tool_result import ToolResult
 
 SCHEMA = {
     "name": "file_move",

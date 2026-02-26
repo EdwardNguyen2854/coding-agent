@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from coding_agent.tool_guard import ToolGuard
-from coding_agent.tool_result import ToolResult
+from coding_agent.core.tool_guard import ToolGuard
+from coding_agent.core.tool_result import ToolResult
 
 SCHEMA = {
     "name": "file_list",
@@ -113,7 +113,17 @@ class FileListTool:
 
         tree = _build_tree(root, self._workspace_root, 0, depth, include_hidden, include_files, include_dirs)
 
+        try:
+            rel = root.relative_to(self._workspace_root)
+            display = str(rel) if str(rel) != "." else "(workspace root)"
+        except ValueError:
+            display = str(root)
+
         return ToolResult.success(
-            data={"tree": tree},
-            message=f"Listed '{root.name}' up to depth {depth}",
+            data={
+                "tree": tree,
+                "workspace_root": str(self._workspace_root),
+                "listed_path": str(root),
+            },
+            message=f"Listed '{display}' (workspace_root={self._workspace_root}) up to depth {depth}",
         )

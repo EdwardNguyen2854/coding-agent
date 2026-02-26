@@ -9,20 +9,20 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from coding_agent.cli import main
+from coding_agent.ui.cli import main
 
 
 @pytest.fixture()
 def mock_renderer():
     """Mock Renderer to avoid Rich terminal behavior in tests."""
-    with patch("coding_agent.cli.Renderer") as mock_cls:
+    with patch("coding_agent.ui.cli.Renderer") as mock_cls:
         yield mock_cls
 
 
 @pytest.fixture()
 def mock_session_manager():
     """Mock SessionManager to avoid database operations in tests."""
-    with patch("coding_agent.cli.SessionManager") as mock_cls:
+    with patch("coding_agent.ui.cli.SessionManager") as mock_cls:
         mock_instance = MagicMock()
         mock_instance.create_session.return_value = {"id": "test-session", "title": "Test Session"}
         mock_cls.return_value = mock_instance
@@ -32,7 +32,7 @@ def mock_session_manager():
 @pytest.fixture()
 def mock_conversation():
     """Mock ConversationManager to avoid actual message history in tests."""
-    with patch("coding_agent.cli.ConversationManager") as mock_cls:
+    with patch("coding_agent.ui.cli.ConversationManager") as mock_cls:
         mock_conv = MagicMock()
         mock_conv.get_messages.return_value = [
             {"role": "system", "content": "You are a helpful assistant."}
@@ -48,14 +48,14 @@ def mock_config(tmp_path, monkeypatch):
     config_file.write_text(
         yaml.dump({"model": "litellm/gpt-4o", "api_base": "http://localhost:4000"})
     )
-    monkeypatch.setattr("coding_agent.config.DEFAULT_CONFIG_FILE", config_file)
+    monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", config_file)
     return config_file
 
 
 @pytest.fixture()
 def mock_llm_client():
     """Mock LLMClient to prevent real network calls in CLI tests."""
-    with patch("coding_agent.cli.LLMClient") as mock_cls:
+    with patch("coding_agent.ui.cli.LLMClient") as mock_cls:
         mock_cls.return_value.verify_connection.return_value = None
         mock_cls.return_value.send_message_stream.return_value = iter([])
         mock_cls.return_value.last_response = MagicMock()
@@ -68,7 +68,7 @@ def mock_llm_client():
 @pytest.fixture()
 def mock_prompt_session():
     """Mock PromptSession to simulate user input without real terminal."""
-    with patch("coding_agent.cli.PromptSession") as mock_cls:
+    with patch("coding_agent.ui.cli.PromptSession") as mock_cls:
         mock_session = MagicMock()
         mock_session.prompt.side_effect = EOFError()  # Default: immediate Ctrl+D
         mock_cls.return_value = mock_session
@@ -96,7 +96,7 @@ class TestProjectStructure:
     def test_utils_exists(self):
         """Utils module exists."""
         project_root = Path(__file__).parent.parent
-        assert (project_root / "src" / "coding_agent" / "utils.py").exists()
+        assert (project_root / "src" / "coding_agent" / "config" / "utils.py").exists()
 
     def test_pyproject_toml_exists(self):
         """AC #4: pyproject.toml exists."""
@@ -110,7 +110,7 @@ class TestPackageMetadata:
     def test_version_defined(self):
         """Package version is accessible."""
         from coding_agent import __version__
-        assert __version__ == "0.10.8"
+        assert __version__ == "0.10.9"
 
     def test_package_importable(self):
         """Package can be imported."""
@@ -215,7 +215,7 @@ class TestCLIConnectivity:
 
     def test_connection_failure_shows_error_and_exits(self, mock_config):
         """AC #2: Connection failure shows error and exits with code 1."""
-        with patch("coding_agent.cli.LLMClient") as mock_cls:
+        with patch("coding_agent.ui.cli.LLMClient") as mock_cls:
             mock_cls.return_value.verify_connection.side_effect = ConnectionError(
                 "Cannot connect to LiteLLM server.\n\n"
                 "  Server: http://localhost:4000"
@@ -227,7 +227,7 @@ class TestCLIConnectivity:
 
     def test_auth_failure_shows_distinct_error_and_exits(self, mock_config):
         """AC #3: Auth failure shows distinct auth error and exits with code 1."""
-        with patch("coding_agent.cli.LLMClient") as mock_cls:
+        with patch("coding_agent.ui.cli.LLMClient") as mock_cls:
             mock_cls.return_value.verify_connection.side_effect = ConnectionError(
                 "Authentication failed connecting to LiteLLM server.\n\n"
                 "  Server: http://localhost:4000"
@@ -254,7 +254,7 @@ class TestCLIConnectivity:
 
     def test_connectivity_check_after_config_loading(self, mock_config, mock_prompt_session, mock_renderer, mock_session_manager):
         """Connectivity check happens after config is loaded (config errors take precedence)."""
-        with patch("coding_agent.cli.LLMClient") as mock_cls:
+        with patch("coding_agent.ui.cli.LLMClient") as mock_cls:
             mock_cls.return_value.verify_connection.side_effect = ConnectionError("fail")
             runner = CliRunner()
             result = runner.invoke(main, [])

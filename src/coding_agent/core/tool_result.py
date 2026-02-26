@@ -64,8 +64,8 @@ class ToolResult:
 
     @property
     def output(self) -> Optional[str]:
-        """Legacy read access: returns data['output'] or message."""
-        return self.data.get("output", self.message)
+        """Legacy read access: returns data['content'], data['output'], or message."""
+        return self.data.get("content") or self.data.get("output") or self.message
 
     @classmethod
     def success(

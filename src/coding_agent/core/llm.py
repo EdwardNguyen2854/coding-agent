@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import litellm
 
-from coding_agent.config import AgentConfig, is_ollama_model
+from coding_agent.config.config import AgentConfig, is_ollama_model
 from coding_agent.tools import get_openai_tools
 
 

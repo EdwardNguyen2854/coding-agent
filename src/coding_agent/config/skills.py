@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from coding_agent.project_instructions import find_git_root
+from coding_agent.config.project_instructions import find_git_root
 
 DEFAULT_CONFIG_DIR = Path.home() / ".coding-agent"
 GLOBAL_SKILLS_DIR = DEFAULT_CONFIG_DIR / "skills"

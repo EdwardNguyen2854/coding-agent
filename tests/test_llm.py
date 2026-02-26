@@ -6,7 +6,7 @@ import litellm
 import pytest
 
 from coding_agent.config import AgentConfig
-from coding_agent.llm import LLMClient
+from coding_agent.core.llm import LLMClient
 
 
 @pytest.fixture()
@@ -48,13 +48,13 @@ class TestLLMClientInit:
 class TestVerifyConnectionSuccess:
     """AC #1: Successful connectivity verification."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_returns_without_error(self, mock_completion, config):
         mock_completion.return_value = MagicMock()
         client = LLMClient(config)
         client.verify_connection()  # Should not raise
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_correct_model(self, mock_completion, config):
         mock_completion.return_value = MagicMock()
         client = LLMClient(config)
@@ -62,7 +62,7 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["model"] == "litellm/gpt-4o"
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_correct_api_base(self, mock_completion, config):
         mock_completion.return_value = MagicMock()
         client = LLMClient(config)
@@ -70,7 +70,7 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["api_base"] == "http://localhost:4000"
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_api_key(self, mock_completion, config_with_key):
         mock_completion.return_value = MagicMock()
         client = LLMClient(config_with_key)
@@ -78,7 +78,7 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["api_key"] == "sk-secret-key-12345"
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_none_api_key(self, mock_completion, config):
         mock_completion.return_value = MagicMock()
         client = LLMClient(config)
@@ -86,7 +86,7 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["api_key"] is None
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_uses_max_tokens_1(self, mock_completion, config):
         mock_completion.return_value = MagicMock()
         client = LLMClient(config)
@@ -94,7 +94,7 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["max_tokens"] == 1
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_uses_short_timeout(self, mock_completion, config):
         mock_completion.return_value = MagicMock()
         client = LLMClient(config)
@@ -102,7 +102,7 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["timeout"] == 10
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_temperature(self, mock_completion, config):
         """AC: temperature is passed to LiteLLM."""
         mock_completion.return_value = MagicMock()
@@ -112,7 +112,7 @@ class TestVerifyConnectionSuccess:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["temperature"] == 0.7
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_top_p(self, mock_completion, config):
         """AC: top_p is passed to LiteLLM."""
         mock_completion.return_value = MagicMock()
@@ -126,7 +126,7 @@ class TestVerifyConnectionSuccess:
 class TestVerifyConnectionUnreachable:
     """AC #2: Unreachable server produces clear error with URL and suggestions."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_raises_connection_error(self, mock_completion, config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -137,7 +137,7 @@ class TestVerifyConnectionUnreachable:
         with pytest.raises(ConnectionError):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_contains_server_url(self, mock_completion, config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -148,7 +148,7 @@ class TestVerifyConnectionUnreachable:
         with pytest.raises(ConnectionError, match="http://localhost:4000"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_contains_cannot_connect(self, mock_completion, config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -159,7 +159,7 @@ class TestVerifyConnectionUnreachable:
         with pytest.raises(ConnectionError, match="Cannot connect"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_contains_suggestions(self, mock_completion, config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -178,7 +178,7 @@ class TestOllamaConnectionError:
     def ollama_config(self):
         return AgentConfig(model="ollama_chat/llama3.2")
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_ollama_error_mentions_ollama_serve(self, mock_completion, ollama_config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -189,7 +189,7 @@ class TestOllamaConnectionError:
         with pytest.raises(ConnectionError, match="ollama serve"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_ollama_error_mentions_ollama_pull(self, mock_completion, ollama_config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -200,7 +200,7 @@ class TestOllamaConnectionError:
         with pytest.raises(ConnectionError, match="ollama pull llama3.2"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_ollama_error_does_not_mention_litellm(self, mock_completion, ollama_config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -212,7 +212,7 @@ class TestOllamaConnectionError:
             client.verify_connection()
         assert "LiteLLM server" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_non_ollama_error_does_not_mention_ollama(self, mock_completion, config):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -228,7 +228,7 @@ class TestOllamaConnectionError:
 class TestVerifyConnectionAuthError:
     """AC #3: Auth error is distinguishable from connectivity failure."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_raises_connection_error(self, mock_completion, config_with_key):
         mock_completion.side_effect = litellm.AuthenticationError(
             message="Invalid API key",
@@ -239,7 +239,7 @@ class TestVerifyConnectionAuthError:
         with pytest.raises(ConnectionError):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_contains_authentication_failed(self, mock_completion, config_with_key):
         mock_completion.side_effect = litellm.AuthenticationError(
             message="Invalid API key",
@@ -250,7 +250,7 @@ class TestVerifyConnectionAuthError:
         with pytest.raises(ConnectionError, match="Authentication failed"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_distinguishable_from_connectivity(self, mock_completion, config_with_key):
         """Auth error message must NOT contain 'Cannot connect' to be distinguishable."""
         mock_completion.side_effect = litellm.AuthenticationError(
@@ -264,7 +264,7 @@ class TestVerifyConnectionAuthError:
         assert "Cannot connect" not in str(exc_info.value)
         assert "Authentication failed" in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_contains_server_url(self, mock_completion, config_with_key):
         mock_completion.side_effect = litellm.AuthenticationError(
             message="Invalid API key",
@@ -279,7 +279,7 @@ class TestVerifyConnectionAuthError:
 class TestVerifyConnectionTimeout:
     """Timeout produces clear error."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_raises_connection_error(self, mock_completion, config):
         mock_completion.side_effect = litellm.Timeout(
             message="Request timed out",
@@ -290,7 +290,7 @@ class TestVerifyConnectionTimeout:
         with pytest.raises(ConnectionError, match="timed out"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_contains_server_url(self, mock_completion, config):
         mock_completion.side_effect = litellm.Timeout(
             message="Request timed out",
@@ -305,7 +305,7 @@ class TestVerifyConnectionTimeout:
 class TestVerifyConnectionServerError:
     """Generic API error produces clear error."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_raises_connection_error(self, mock_completion, config):
         mock_completion.side_effect = litellm.APIError(
             status_code=500,
@@ -317,7 +317,7 @@ class TestVerifyConnectionServerError:
         with pytest.raises(ConnectionError, match="request failed"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_error_contains_status_code(self, mock_completion, config):
         mock_completion.side_effect = litellm.APIError(
             status_code=503,
@@ -329,7 +329,7 @@ class TestVerifyConnectionServerError:
         with pytest.raises(ConnectionError, match="503"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_client_error_caught(self, mock_completion, config):
         """400-level errors (e.g., bad model name) are caught by APIError fallback."""
         mock_completion.side_effect = litellm.APIError(
@@ -346,7 +346,7 @@ class TestVerifyConnectionServerError:
 class TestVerifyConnectionBadRequestError:
     """BadRequestError (e.g. provider rejects message format) is handled cleanly."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_bad_request_raises_connection_error(self, mock_completion, config):
         mock_completion.side_effect = litellm.BadRequestError(
             message="Unrecognized chat message.",
@@ -357,7 +357,7 @@ class TestVerifyConnectionBadRequestError:
         with pytest.raises(ConnectionError, match="rejected the request"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_bad_request_message_contains_hint(self, mock_completion, config):
         mock_completion.side_effect = litellm.BadRequestError(
             message="Unrecognized chat message.",
@@ -368,7 +368,7 @@ class TestVerifyConnectionBadRequestError:
         with pytest.raises(ConnectionError, match="/model"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_bad_request_no_traceback_in_message(self, mock_completion, config):
         mock_completion.side_effect = litellm.BadRequestError(
             message="Unrecognized chat message.",
@@ -384,28 +384,28 @@ class TestVerifyConnectionBadRequestError:
 class TestVerifyConnectionUnexpectedException:
     """Unexpected exceptions are caught gracefully without leaking tracebacks."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_unexpected_error_raises_connection_error(self, mock_completion, config):
         mock_completion.side_effect = RuntimeError("something completely unexpected")
         client = LLMClient(config)
         with pytest.raises(ConnectionError, match="Unexpected error"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_unexpected_error_contains_server_url(self, mock_completion, config):
         mock_completion.side_effect = ValueError("bad value")
         client = LLMClient(config)
         with pytest.raises(ConnectionError, match="http://localhost:4000"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_unexpected_error_includes_exception_type(self, mock_completion, config):
         mock_completion.side_effect = KeyError("missing_key")
         client = LLMClient(config)
         with pytest.raises(ConnectionError, match="KeyError"):
             client.verify_connection()
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_unexpected_error_no_traceback_in_message(self, mock_completion, config):
         mock_completion.side_effect = RuntimeError("boom")
         client = LLMClient(config)
@@ -417,7 +417,7 @@ class TestVerifyConnectionUnexpectedException:
 class TestVerifyConnectionApiKeySecurity:
     """NFR7: API key never appears in error messages."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_connection_error(self, mock_completion, config_with_key):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -429,7 +429,7 @@ class TestVerifyConnectionApiKeySecurity:
             client.verify_connection()
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_auth_error(self, mock_completion, config_with_key):
         mock_completion.side_effect = litellm.AuthenticationError(
             message="Invalid API key",
@@ -441,7 +441,7 @@ class TestVerifyConnectionApiKeySecurity:
             client.verify_connection()
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_timeout_error(self, mock_completion, config_with_key):
         mock_completion.side_effect = litellm.Timeout(
             message="Request timed out",
@@ -453,7 +453,7 @@ class TestVerifyConnectionApiKeySecurity:
             client.verify_connection()
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_server_error(self, mock_completion, config_with_key):
         mock_completion.side_effect = litellm.APIError(
             status_code=500,
@@ -466,7 +466,7 @@ class TestVerifyConnectionApiKeySecurity:
             client.verify_connection()
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_unexpected_error(self, mock_completion, config_with_key):
         mock_completion.side_effect = RuntimeError("unexpected")
         client = LLMClient(config_with_key)
@@ -501,8 +501,8 @@ def sample_messages():
 class TestSendMessageStreamSuccess:
     """AC #2: Streaming returns text deltas in real-time."""
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_yields_text_deltas_in_order(self, mock_completion, mock_builder, config, sample_messages):
         chunks = _make_stream_chunks(["Hello", " world", "!"])
         mock_completion.return_value = iter(chunks)
@@ -512,8 +512,8 @@ class TestSendMessageStreamSuccess:
         deltas = list(client.send_message_stream(sample_messages))
         assert deltas == ["Hello", " world", "!"]
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_skips_none_deltas(self, mock_completion, mock_builder, config, sample_messages):
         """Chunks with None content (e.g., role-only chunks) are skipped."""
         chunks = _make_stream_chunks([None, "Hello", None, " world"])
@@ -524,8 +524,8 @@ class TestSendMessageStreamSuccess:
         deltas = list(client.send_message_stream(sample_messages))
         assert deltas == ["Hello", " world"]
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_calls_stream_chunk_builder(self, mock_completion, mock_builder, config, sample_messages):
         chunks = _make_stream_chunks(["Hi"])
         mock_completion.return_value = iter(chunks)
@@ -537,8 +537,8 @@ class TestSendMessageStreamSuccess:
         # The chunks list passed to builder should contain all chunks
         assert len(mock_builder.call_args[0][0]) == 1
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_full_response_available_after_streaming(self, mock_completion, mock_builder, config, sample_messages):
         chunks = _make_stream_chunks(["Hello", " world"])
         mock_completion.return_value = iter(chunks)
@@ -555,8 +555,8 @@ class TestSendMessageStreamSuccess:
 class TestSendMessageStreamParams:
     """Verify correct parameters are passed to litellm.completion."""
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_correct_model(self, mock_completion, mock_builder, config, sample_messages):
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
         mock_builder.return_value = MagicMock()
@@ -566,8 +566,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["model"] == "litellm/gpt-4o"
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_correct_api_base(self, mock_completion, mock_builder, config, sample_messages):
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
         mock_builder.return_value = MagicMock()
@@ -577,8 +577,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["api_base"] == "http://localhost:4000"
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_api_key(self, mock_completion, mock_builder, config_with_key, sample_messages):
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
         mock_builder.return_value = MagicMock()
@@ -588,8 +588,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["api_key"] == "sk-secret-key-12345"
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_stream_true(self, mock_completion, mock_builder, config, sample_messages):
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
         mock_builder.return_value = MagicMock()
@@ -599,8 +599,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["stream"] is True
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_messages(self, mock_completion, mock_builder, config, sample_messages):
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
         mock_builder.return_value = MagicMock()
@@ -610,8 +610,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["messages"] == sample_messages
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_timeout(self, mock_completion, mock_builder, config, sample_messages):
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
         mock_builder.return_value = MagicMock()
@@ -621,8 +621,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["timeout"] == 300
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_temperature_stream(self, mock_completion, mock_builder, config, sample_messages):
         """AC: temperature is passed to LiteLLM in streaming."""
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
@@ -634,8 +634,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["temperature"] == 0.7
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_max_tokens_stream(self, mock_completion, mock_builder, config, sample_messages):
         """AC: max_output_tokens is passed to LiteLLM in streaming."""
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
@@ -647,8 +647,8 @@ class TestSendMessageStreamParams:
         call_kwargs = mock_completion.call_args[1]
         assert call_kwargs["max_tokens"] == 8192
 
-    @patch("coding_agent.llm.litellm.stream_chunk_builder")
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_passes_top_p_stream(self, mock_completion, mock_builder, config, sample_messages):
         """AC: top_p is passed to LiteLLM in streaming."""
         mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
@@ -664,7 +664,7 @@ class TestSendMessageStreamParams:
 class TestSendMessageStreamErrors:
     """Streaming errors produce clear ConnectionError messages."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_connection_error(self, mock_completion, config, sample_messages):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -675,7 +675,7 @@ class TestSendMessageStreamErrors:
         with pytest.raises(ConnectionError, match="Cannot connect"):
             list(client.send_message_stream(sample_messages))
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_auth_error(self, mock_completion, config_with_key, sample_messages):
         mock_completion.side_effect = litellm.AuthenticationError(
             message="Invalid API key",
@@ -686,7 +686,7 @@ class TestSendMessageStreamErrors:
         with pytest.raises(ConnectionError, match="Authentication failed"):
             list(client.send_message_stream(sample_messages))
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_timeout_error(self, mock_completion, config, sample_messages):
         mock_completion.side_effect = litellm.Timeout(
             message="Request timed out",
@@ -697,7 +697,7 @@ class TestSendMessageStreamErrors:
         with pytest.raises(ConnectionError, match="timed out"):
             list(client.send_message_stream(sample_messages))
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_error(self, mock_completion, config, sample_messages):
         mock_completion.side_effect = litellm.APIError(
             status_code=500,
@@ -709,7 +709,7 @@ class TestSendMessageStreamErrors:
         with pytest.raises(ConnectionError, match="request failed"):
             list(client.send_message_stream(sample_messages))
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_unexpected_error(self, mock_completion, config, sample_messages):
         mock_completion.side_effect = RuntimeError("something unexpected")
         client = LLMClient(config)
@@ -720,7 +720,7 @@ class TestSendMessageStreamErrors:
 class TestSendMessageStreamMidStreamError:
     """Mid-stream errors (during chunk iteration) are handled gracefully."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_mid_stream_connection_error(self, mock_completion, config, sample_messages):
         """Error raised during chunk iteration (not at call time)."""
         chunk1 = MagicMock()
@@ -740,7 +740,7 @@ class TestSendMessageStreamMidStreamError:
         with pytest.raises(ConnectionError, match="Cannot connect"):
             list(client.send_message_stream(sample_messages))
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_mid_stream_error_resets_last_response(self, mock_completion, config, sample_messages):
         """last_response stays None when mid-stream error occurs."""
         chunk1 = MagicMock()
@@ -761,7 +761,7 @@ class TestSendMessageStreamMidStreamError:
             list(client.send_message_stream(sample_messages))
         assert client.last_response is None
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_mid_stream_unexpected_error(self, mock_completion, config, sample_messages):
         """Unexpected exception during chunk iteration is caught."""
         chunk1 = MagicMock()
@@ -781,7 +781,7 @@ class TestSendMessageStreamMidStreamError:
 class TestSendMessageStreamApiKeySecurity:
     """NFR7: API key never appears in streaming error messages."""
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_connection_error(self, mock_completion, config_with_key, sample_messages):
         mock_completion.side_effect = litellm.APIConnectionError(
             message="Connection refused",
@@ -793,7 +793,7 @@ class TestSendMessageStreamApiKeySecurity:
             list(client.send_message_stream(sample_messages))
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_auth_error(self, mock_completion, config_with_key, sample_messages):
         mock_completion.side_effect = litellm.AuthenticationError(
             message="Invalid API key",
@@ -805,7 +805,7 @@ class TestSendMessageStreamApiKeySecurity:
             list(client.send_message_stream(sample_messages))
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_timeout_error(self, mock_completion, config_with_key, sample_messages):
         mock_completion.side_effect = litellm.Timeout(
             message="Request timed out",
@@ -817,7 +817,7 @@ class TestSendMessageStreamApiKeySecurity:
             list(client.send_message_stream(sample_messages))
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_api_error(self, mock_completion, config_with_key, sample_messages):
         mock_completion.side_effect = litellm.APIError(
             status_code=500,
@@ -830,7 +830,7 @@ class TestSendMessageStreamApiKeySecurity:
             list(client.send_message_stream(sample_messages))
         assert "sk-secret-key-12345" not in str(exc_info.value)
 
-    @patch("coding_agent.llm.litellm.completion")
+    @patch("coding_agent.core.llm.litellm.completion")
     def test_api_key_not_in_unexpected_error(self, mock_completion, config_with_key, sample_messages):
         mock_completion.side_effect = RuntimeError("unexpected")
         client = LLMClient(config_with_key)

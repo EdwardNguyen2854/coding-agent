@@ -13,7 +13,13 @@ try:
 except Exception:
     pass
 
-from coding_agent.config import load_config, DEFAULT_SKILLS, SkillsConfig, SkillSetting, DEFAULT_CONFIG_FILE
+from coding_agent.config import (
+    DEFAULT_CONFIG_FILE,
+    DEFAULT_SKILLS,
+    SkillsConfig,
+    SkillSetting,
+    load_config,
+)
 _early_config = None
 try:
     _early_config = load_config()
@@ -28,19 +34,24 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.styles import Style as PTStyle
 
-from coding_agent.agent import Agent
-from coding_agent.config import ConfigError, OLLAMA_DEFAULT_API_BASE, apply_cli_overrides, ensure_docs_installed
-from coding_agent.conversation import ConversationManager
-from coding_agent.llm import LLMClient
-from coding_agent.project_instructions import get_enhanced_system_prompt
-from coding_agent.renderer import Renderer
-from coding_agent.session import SessionManager
-from coding_agent.skills import load_skills
-from coding_agent.slash_commands import SlashCommandCompleter, execute_command, register_skills
-from coding_agent.system_prompt import SYSTEM_PROMPT
+from coding_agent.core.agent import Agent
+from coding_agent.config import (
+    ConfigError,
+    OLLAMA_DEFAULT_API_BASE,
+    apply_cli_overrides,
+    ensure_docs_installed,
+)
+from coding_agent.core.conversation import ConversationManager
+from coding_agent.core.llm import LLMClient
+from coding_agent.config.project_instructions import get_enhanced_system_prompt
+from coding_agent.ui.renderer import Renderer
+from coding_agent.state.session import SessionManager
+from coding_agent.config.skills import load_skills
+from coding_agent.ui.slash_commands import SlashCommandCompleter, execute_command, register_skills
+from coding_agent.core.system_prompt import SYSTEM_PROMPT
 
 from coding_agent import __version__
-from coding_agent.sidebar import make_toolbar
+from coding_agent.ui.sidebar import make_toolbar
 from coding_agent.workflow import WorkflowManager, WorkflowState
 
 import litellm
@@ -357,7 +368,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
 
     current_workflow.set_task_complete_callback(on_task_complete)
 
-    from coding_agent.slash_commands import set_workflow_manager
+    from coding_agent.ui.slash_commands import set_workflow_manager
     set_workflow_manager(workflow_manager)
 
     renderer.print_info("Type 'exit' to quit.\n")
@@ -386,7 +397,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         context_limit=128000,
     )
 
-    from coding_agent.interrupt import get_interrupt_handler, trigger_interrupt
+    from coding_agent.ui.interrupt import get_interrupt_handler, trigger_interrupt
     interrupt_handler = get_interrupt_handler()
     interrupt_handler.start_keyboard_listener()
 

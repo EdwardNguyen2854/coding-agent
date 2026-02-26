@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from coding_agent.slash_commands import (
+from coding_agent.ui.slash_commands import (
     COMMANDS,
     cmd_exit,
     cmd_help,
@@ -153,7 +153,7 @@ class TestModelCommand:
 
     def test_model_command_requires_arg(self):
         """Model command requires an argument."""
-        from coding_agent.slash_commands import COMMANDS
+        from coding_agent.ui.slash_commands import COMMANDS
 
         assert COMMANDS["model"].arg_required is True
 
@@ -222,7 +222,7 @@ class TestInitCommand:
 
     def test_creates_agents_md(self, tmp_path, mock_conversation, mock_session_manager, mock_renderer):
         """Init creates AGENTS.md when it does not exist."""
-        with patch("coding_agent.slash_commands.find_git_root", return_value=tmp_path):
+        with patch("coding_agent.ui.slash_commands.find_git_root", return_value=tmp_path):
             result = cmd_init("", mock_conversation, mock_session_manager, mock_renderer)
 
         assert result is True
@@ -236,7 +236,7 @@ class TestInitCommand:
         agents_md = tmp_path / "AGENTS.md"
         agents_md.write_text("existing content")
 
-        with patch("coding_agent.slash_commands.find_git_root", return_value=tmp_path):
+        with patch("coding_agent.ui.slash_commands.find_git_root", return_value=tmp_path):
             result = cmd_init("", mock_conversation, mock_session_manager, mock_renderer)
 
         assert result is True
@@ -246,7 +246,7 @@ class TestInitCommand:
 
     def test_init_uses_cwd_when_no_git_root(self, tmp_path, mock_conversation, mock_session_manager, mock_renderer):
         """Init falls back to cwd when no git root is found."""
-        with patch("coding_agent.slash_commands.find_git_root", return_value=None):
+        with patch("coding_agent.ui.slash_commands.find_git_root", return_value=None):
             with patch("pathlib.Path.cwd", return_value=tmp_path):
                 result = cmd_init("", mock_conversation, mock_session_manager, mock_renderer)
 
@@ -262,7 +262,7 @@ class TestRegisterSkills:
         mock_agent = MagicMock()
         
         # Import Skill class to create proper mock
-        from coding_agent.skills import Skill
+        from coding_agent.config.skills import Skill
         skills = {"myskill": Skill(name="myskill", description="Do something useful.", instructions="Do something useful.")}
 
         original_keys = set(COMMANDS.keys())
@@ -281,7 +281,7 @@ class TestRegisterSkills:
         mock_agent = MagicMock()
         
         # Import Skill class to create proper mock
-        from coding_agent.skills import Skill
+        from coding_agent.config.skills import Skill
         skills = {"testskill": Skill(name="testskill", description="Test skill", instructions="Test skill instructions.")}
 
         registered = register_skills(skills, mock_agent)
@@ -306,7 +306,7 @@ class TestRegisterSkills:
         mock_agent = MagicMock()
         
         # Import Skill class to create proper mock
-        from coding_agent.skills import Skill
+        from coding_agent.config.skills import Skill
         skills = {"checkskill": Skill(name="checkskill", description="Check skill", instructions="Base instructions.")}
 
         registered = register_skills(skills, mock_agent)
@@ -330,7 +330,7 @@ class TestRegisterSkills:
         mock_agent = MagicMock()
         
         # Import Skill class to create proper mock
-        from coding_agent.skills import Skill
+        from coding_agent.config.skills import Skill
         skills = {"": Skill(name="", description="", instructions="Some content.")}
 
         registered = register_skills(skills, mock_agent)

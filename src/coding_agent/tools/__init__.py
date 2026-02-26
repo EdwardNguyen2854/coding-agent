@@ -137,7 +137,7 @@ def get_openai_tools(
 
 def execute_tool(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by name. Call get_openai_tools() first."""
-    from coding_agent.tool_result import ToolResult
+    from coding_agent.core.tool_result import ToolResult
     if name not in tool_registry:
         return ToolResult.failure(
             "TOOL_NOT_FOUND",

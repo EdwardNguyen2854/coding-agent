@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from coding_agent.db import Database
-from coding_agent import schema
+from coding_agent.state.db import Database
+from coding_agent.state import schema
 
 _log = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ class SessionManager:
             self._ensure_compatibility()
 
         self._session_cap = session_cap
+        self._seq = 0  # monotonic counter for legacy mode ordering
 
     def _ensure_compatibility(self) -> None:
         """Run migrations and check for JSON files to migrate."""
@@ -123,6 +124,9 @@ class SessionManager:
                 )
 
                 for msg in messages:
+                    content = msg.get("content", "")
+                    if content is None:
+                        content = ""
                     self._db.execute(
                         """INSERT INTO messages
                            (session_id, role, content, token_count, created_at)
@@ -130,7 +134,7 @@ class SessionManager:
                         (
                             session_id,
                             msg.get("role", "user"),
-                            msg.get("content", ""),
+                            content,
                             self._estimate_tokens([msg]),
                             now,
                         ),
@@ -214,7 +218,9 @@ class SessionManager:
                 "updated_at": now,
                 "model": model,
                 "token_count": token_count,
+                "_seq": self._seq,
             }
+            self._seq += 1
             self.save(session)
             self._prune_old_sessions()
             return session
@@ -456,11 +462,12 @@ class SessionManager:
                     "updated_at": data.get("updated_at", ""),
                     "model": data.get("model", "unknown"),
                     "token_count": data.get("token_count", 0),
+                    "_seq": data.get("_seq", -1),
                 })
             except (json.JSONDecodeError, OSError):
                 continue
 
-        sessions.sort(key=lambda s: s.get("updated_at", ""), reverse=True)
+        sessions.sort(key=lambda s: (s.get("updated_at", ""), s.get("_seq", -1)), reverse=True)
         return sessions
 
     def delete(self, session_id: str) -> bool:
