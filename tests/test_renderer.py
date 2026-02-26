@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-from coding_agent.ui.renderer import PlainStreamingDisplay, Renderer, StreamingDisplay
+from coding_agent.ui.renderer import BufferedMarkdownDisplay, PlainStreamingDisplay, Renderer, StreamingDisplay
 
 
 class TestRenderer:
@@ -204,14 +204,23 @@ class TestRenderStreamingLive:
 
     @patch("coding_agent.ui.renderer.Console")
     def test_returns_streaming_display_for_terminal(self, mock_console_cls):
-        """Returns StreamingDisplay when console is a terminal."""
+        """Returns StreamingDisplay or BufferedMarkdownDisplay when console is a terminal.
+
+        On Windows the renderer returns BufferedMarkdownDisplay to avoid Rich Live
+        cursor-movement failures; on other platforms it returns StreamingDisplay.
+        """
+        import sys
+
         mock_console = MagicMock()
         mock_console.is_terminal = True
         mock_console_cls.return_value = mock_console
         renderer = Renderer()
 
         display = renderer.render_streaming_live()
-        assert isinstance(display, StreamingDisplay)
+        if sys.platform == "win32":
+            assert isinstance(display, BufferedMarkdownDisplay)
+        else:
+            assert isinstance(display, StreamingDisplay)
 
     @patch("coding_agent.ui.renderer.Console")
     def test_returns_plain_display_for_non_terminal(self, mock_console_cls):

@@ -121,6 +121,51 @@ class PlainStreamingDisplay:
         return self._text
 
 
+class BufferedMarkdownDisplay:
+    """Streaming display for terminals where Rich Live cursor movement is unreliable.
+
+    Shows an animated spinner while waiting for the first token, then buffers
+    all incoming text. On exit, renders the full accumulated text as Rich Markdown
+    in a single pass — avoiding the duplicate-output bug caused by Rich Live
+    re-printing the full render on each refresh tick when ANSI cursor-up codes
+    are not honoured (common on Windows terminals).
+    """
+
+    def __init__(self, console: Console) -> None:
+        self._console = console
+        self._text = ""
+        self._status: Status | None = None
+
+    def __enter__(self) -> "BufferedMarkdownDisplay":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._status is not None:
+            self._status.stop()
+            self._status = None
+        if self._text.strip():
+            self._console.print(Markdown(self._text))
+
+    def start_thinking(self) -> None:
+        """Show an animated spinner while waiting for the first token."""
+        self._status = self._console.status(
+            Text(" Thinking...", style="dim"), spinner="dots"
+        )
+        self._status.start()
+
+    def update(self, delta: str) -> None:
+        """Buffer incoming token; stop spinner on first token."""
+        if self._status is not None:
+            self._status.stop()
+            self._status = None
+        self._text += delta
+
+    @property
+    def full_text(self) -> str:
+        """Return the accumulated text."""
+        return self._text
+
+
 class Renderer:
     """Render markdown and styled status/error output in terminal."""
 
@@ -131,17 +176,28 @@ class Renderer:
         """Render markdown content with Rich formatting."""
         self.console.print(Markdown(text))
 
-    def render_streaming_live(self) -> "StreamingDisplay | PlainStreamingDisplay":
+    def render_streaming_live(self) -> "StreamingDisplay | BufferedMarkdownDisplay | PlainStreamingDisplay":
         """Return a streaming display context manager.
 
-        Uses Rich Live for interactive terminals, plain print for piped/dumb terminals.
+        Selection logic:
+        - Non-terminal (piped/dumb): ``PlainStreamingDisplay`` — raw token prints.
+        - Windows terminal: ``BufferedMarkdownDisplay`` — spinner then single
+          Markdown render, avoiding Rich Live cursor-movement failures.
+        - Other interactive terminals: ``StreamingDisplay`` — live Markdown.
+
+        Override Windows detection by setting ``CODING_AGENT_FORCE_STREAMING=1``.
 
         Returns:
             A streaming display context manager.
         """
-        if self.console.is_terminal:
-            return StreamingDisplay(self.console)
-        return PlainStreamingDisplay()
+        import os
+        import sys
+
+        if not self.console.is_terminal:
+            return PlainStreamingDisplay()
+        if sys.platform == "win32" and not os.environ.get("CODING_AGENT_FORCE_STREAMING"):
+            return BufferedMarkdownDisplay(self.console)
+        return StreamingDisplay(self.console)
 
     def print_error(self, message: str) -> None:
         """Print a styled error message."""
