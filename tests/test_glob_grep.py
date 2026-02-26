@@ -36,7 +36,7 @@ class TestGlobTool:
         """Test missing pattern returns error."""
         result = glob_execute({})
         assert result.is_error is True
-        assert "Pattern is required" in result.error
+        assert "Pattern is required" in result.message
 
 
 class TestGrepTool:
@@ -79,7 +79,7 @@ class TestGrepTool:
         """Test missing pattern returns error."""
         result = grep_execute({})
         assert result.is_error is True
-        assert "Pattern is required" in result.error
+        assert "Pattern is required" in result.message
 
     def test_grep_timeout(self):
         """Test grep timeout."""

@@ -27,4 +27,4 @@ coding-agent = "coding_agent.cli:cli"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"*" = ["docs/**/*"]
+"*" = ["docs/**/*", "workflows/**/*.yaml"]

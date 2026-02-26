@@ -101,6 +101,7 @@ class TestDiffPreviewException:
         mock_result.is_error = False
         mock_result.error = None
         mock_result.output = "ok"
+        mock_result.message = ""  # Add message attribute
         with patch("coding_agent.agent.execute_tool", return_value=mock_result):
             with patch("pathlib.Path.exists", return_value=True):
                 with patch("pathlib.Path.read_text", side_effect=OSError("permission denied")):

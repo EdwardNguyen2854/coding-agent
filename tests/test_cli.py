@@ -20,6 +20,16 @@ def mock_renderer():
 
 
 @pytest.fixture()
+def mock_session_manager():
+    """Mock SessionManager to avoid database operations in tests."""
+    with patch("coding_agent.cli.SessionManager") as mock_cls:
+        mock_instance = MagicMock()
+        mock_instance.create_session.return_value = {"id": "test-session", "title": "Test Session"}
+        mock_cls.return_value = mock_instance
+        yield mock_instance
+
+
+@pytest.fixture()
 def mock_conversation():
     """Mock ConversationManager to avoid actual message history in tests."""
     with patch("coding_agent.cli.ConversationManager") as mock_cls:
@@ -100,7 +110,7 @@ class TestPackageMetadata:
     def test_version_defined(self):
         """Package version is accessible."""
         from coding_agent import __version__
-        assert __version__ == "0.5.0"
+        assert __version__ == "0.10.8"
 
     def test_package_importable(self):
         """Package can be imported."""
@@ -126,19 +136,19 @@ class TestCLI:
         result = runner.invoke(main, ["--help"])
         assert "--ollama" in result.output
 
-    def test_model_option_accepted(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_model_option_accepted(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #2: --model flag is recognized."""
         runner = CliRunner()
         result = runner.invoke(main, ["--model", "litellm/gpt-4o"])
         assert result.exit_code == 0
 
-    def test_api_base_option_accepted(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_api_base_option_accepted(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #2: --api-base flag is recognized."""
         runner = CliRunner()
         result = runner.invoke(main, ["--api-base", "http://localhost:4000"])
         assert result.exit_code == 0
 
-    def test_default_invocation(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_default_invocation(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """CLI runs without arguments and calls render_banner and render_config."""
         runner = CliRunner()
         result = runner.invoke(main, [])
@@ -152,7 +162,7 @@ class TestCLI:
 class TestOllamaFlag:
     """--ollama flag sets model and api_base for local Ollama."""
 
-    def test_ollama_flag_sets_ollama_chat_model(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_ollama_flag_sets_ollama_chat_model(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """--ollama MODEL sets model to ollama_chat/MODEL."""
         runner = CliRunner()
         runner.invoke(main, ["--ollama", "llama3.2"])
@@ -160,7 +170,7 @@ class TestOllamaFlag:
         call_kwargs = mock_llm_client.call_args[0][0]  # first positional arg (config)
         assert call_kwargs.model == "ollama_chat/llama3.2"
 
-    def test_ollama_flag_sets_default_api_base(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_ollama_flag_sets_default_api_base(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """--ollama MODEL sets api_base to http://localhost:11434."""
         from coding_agent.config import OLLAMA_DEFAULT_API_BASE
         runner = CliRunner()
@@ -168,21 +178,21 @@ class TestOllamaFlag:
         call_kwargs = mock_llm_client.call_args[0][0]
         assert call_kwargs.api_base == OLLAMA_DEFAULT_API_BASE
 
-    def test_ollama_flag_with_explicit_api_base_uses_explicit(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_ollama_flag_with_explicit_api_base_uses_explicit(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """--ollama MODEL --api-base URL uses the explicit api-base."""
         runner = CliRunner()
         runner.invoke(main, ["--ollama", "llama3.2", "--api-base", "http://remote-ollama:11434"])
         call_kwargs = mock_llm_client.call_args[0][0]
         assert call_kwargs.api_base == "http://remote-ollama:11434"
 
-    def test_ollama_flag_with_full_prefix_preserved(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_ollama_flag_with_full_prefix_preserved(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """--ollama ollama_chat/llama3.2 keeps the full prefix unchanged."""
         runner = CliRunner()
         runner.invoke(main, ["--ollama", "ollama_chat/llama3.2"])
         call_kwargs = mock_llm_client.call_args[0][0]
         assert call_kwargs.model == "ollama_chat/llama3.2"
 
-    def test_ollama_flag_exit_code_zero(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_ollama_flag_exit_code_zero(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """--ollama flag runs successfully."""
         runner = CliRunner()
         result = runner.invoke(main, ["--ollama", "llama3.2"])
@@ -193,7 +203,7 @@ class TestCLIConnectivity:
     """Story 1.3: Verify CLI integrates connectivity check on startup."""
 
     def test_successful_startup_shows_connected(
-        self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer
+        self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager
     ):
         """AC #1: Successful connection shows confirmation message."""
         runner = CliRunner()
@@ -228,7 +238,7 @@ class TestCLIConnectivity:
             assert "Authentication failed" in result.output
             assert "Cannot connect" not in result.output
 
-    def test_llm_client_receives_config(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_llm_client_receives_config(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """LLMClient is instantiated with the loaded config."""
         runner = CliRunner()
         runner.invoke(main, [])
@@ -236,13 +246,13 @@ class TestCLIConnectivity:
         assert config_arg.model == "litellm/gpt-4o"
         assert config_arg.api_base == "http://localhost:4000"
 
-    def test_verify_connection_called(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_verify_connection_called(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """verify_connection() is called during startup."""
         runner = CliRunner()
         runner.invoke(main, [])
         mock_llm_client.return_value.verify_connection.assert_called_once()
 
-    def test_connectivity_check_after_config_loading(self, mock_config, mock_prompt_session, mock_renderer):
+    def test_connectivity_check_after_config_loading(self, mock_config, mock_prompt_session, mock_renderer, mock_session_manager):
         """Connectivity check happens after config is loaded (config errors take precedence)."""
         with patch("coding_agent.cli.LLMClient") as mock_cls:
             mock_cls.return_value.verify_connection.side_effect = ConnectionError("fail")
@@ -275,35 +285,35 @@ class TestPythonModule:
 class TestREPLLoop:
     """Story 2.1: Interactive REPL loop with prompt-toolkit."""
 
-    def test_exit_command_ends_session(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_exit_command_ends_session(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #3: 'exit' command ends session gracefully."""
         mock_prompt_session.prompt.side_effect = ["exit"]
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert result.exit_code == 0
 
-    def test_quit_command_ends_session(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_quit_command_ends_session(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #3: 'quit' command ends session gracefully."""
         mock_prompt_session.prompt.side_effect = ["quit"]
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert result.exit_code == 0
 
-    def test_exit_case_insensitive(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_exit_case_insensitive(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #3: Exit commands are case-insensitive."""
         mock_prompt_session.prompt.side_effect = ["EXIT"]
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert result.exit_code == 0
 
-    def test_ctrl_d_ends_session(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_ctrl_d_ends_session(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #3: Ctrl+D (EOFError) ends session gracefully."""
         mock_prompt_session.prompt.side_effect = EOFError()
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert result.exit_code == 0
 
-    def test_ctrl_c_shows_hint_and_continues(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_ctrl_c_shows_hint_and_continues(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #3: Ctrl+C shows hint message and continues the loop."""
         mock_prompt_session.prompt.side_effect = [KeyboardInterrupt(), "exit"]
         runner = CliRunner()
@@ -313,7 +323,7 @@ class TestREPLLoop:
         calls = [str(c) for c in mock_renderer.return_value.print_info.call_args_list]
         assert any("Ctrl+D" in c for c in calls)
 
-    def test_empty_input_skipped(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_empty_input_skipped(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """Empty input is skipped without sending to LLM."""
         mock_prompt_session.prompt.side_effect = ["", "   ", "exit"]
         runner = CliRunner()
@@ -321,7 +331,7 @@ class TestREPLLoop:
         assert result.exit_code == 0
         mock_llm_client.return_value.send_message_stream.assert_not_called()
 
-    def test_user_message_sent_to_llm(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_user_message_sent_to_llm(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """AC #1, #2: User message is sent to LLM."""
         mock_prompt_session.prompt.side_effect = ["Hello AI", "exit"]
         mock_llm_client.return_value.send_message_stream.return_value = iter(["Hi there!"])
@@ -341,7 +351,7 @@ class TestREPLLoop:
         assert any("Hello AI" in m["content"] for m in user_msgs)
 
     def test_connection_error_during_chat_continues_repl(
-        self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer
+        self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager
     ):
         """LLM connection error during chat shows error and continues REPL."""
         mock_prompt_session.prompt.side_effect = ["test", "exit"]
@@ -354,7 +364,7 @@ class TestREPLLoop:
         result = runner.invoke(main, [])
         assert result.exit_code == 0
 
-    def test_messages_accumulate_history(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_messages_accumulate_history(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """Messages list accumulates conversation history across turns."""
         mock_prompt_session.prompt.side_effect = ["first message", "second message", "exit"]
 
@@ -401,7 +411,7 @@ class TestREPLLoop:
         assert second_roles == ["system", "user", "assistant", "user"]
         assert messages_snapshots[1][2]["content"] == "response 1"
 
-    def test_system_prompt_included(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer):
+    def test_system_prompt_included(self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager):
         """A system prompt is included in the messages sent to LLM."""
         mock_prompt_session.prompt.side_effect = ["hello", "exit"]
         mock_llm_client.return_value.send_message_stream.return_value = iter(["hi"])
@@ -417,7 +427,7 @@ class TestREPLLoop:
         assert call_args[0]["role"] == "system"
 
     def test_chat_error_uses_renderer_print_error(
-        self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer
+        self, mock_config, mock_llm_client, mock_prompt_session, mock_renderer, mock_session_manager
     ):
         """Errors during chat are displayed via renderer.print_error()."""
         mock_prompt_session.prompt.side_effect = ["test", "exit"]

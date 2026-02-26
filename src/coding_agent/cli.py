@@ -99,8 +99,26 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 
 @click.group(invoke_without_command=True)
 @click.pass_context
-def cli(ctx):
+@click.option("--model", default=None, help="Override LLM model (e.g., litellm/gpt-4o)")
+@click.option("--api-base", default=None, help="Override LiteLLM API base URL")
+@click.option("--temperature", default=None, type=float, help="Override temperature (0.0-2.0)")
+@click.option("--max-output-tokens", "max_output_tokens", default=None, type=int, help="Override max output tokens")
+@click.option("--top-p", default=None, type=float, help="Override top_p (0.0-1.0)")
+@click.option("--resume", is_flag=True, help="Resume the most recent session")
+@click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
+@click.option("--ollama", "ollama_model", default=None, metavar="MODEL",
+              help="Use a local Ollama model, e.g. llama3.2 or qwen2.5-coder:7b")
+def cli(ctx, model, api_base, temperature, max_output_tokens, top_p, resume, session_id, ollama_model):
     """Coding-Agent CLI."""
+    ctx.ensure_object(dict)
+    ctx.obj["model"] = model
+    ctx.obj["api_base"] = api_base
+    ctx.obj["temperature"] = temperature
+    ctx.obj["max_output_tokens"] = max_output_tokens
+    ctx.obj["top_p"] = top_p
+    ctx.obj["resume"] = resume
+    ctx.obj["session_id"] = session_id
+    ctx.obj["ollama_model"] = ollama_model
     if ctx.invoked_subcommand is None:
         ctx.invoke(run)
 
@@ -209,8 +227,29 @@ def skills(choice):
 @click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
 @click.option("--ollama", "ollama_model", default=None, metavar="MODEL",
               help="Use a local Ollama model, e.g. llama3.2 or qwen2.5-coder:7b")
-def run(model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None) -> None:
+@click.pass_context
+def run(ctx, model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
+    # Use parent context options as defaults if not provided
+    parent = ctx.parent
+    if parent and parent.obj:
+        if model is None:
+            model = parent.obj.get("model")
+        if api_base is None:
+            api_base = parent.obj.get("api_base")
+        if temperature is None:
+            temperature = parent.obj.get("temperature")
+        if max_output_tokens is None:
+            max_output_tokens = parent.obj.get("max_output_tokens")
+        if top_p is None:
+            top_p = parent.obj.get("top_p")
+        if not resume:
+            resume = parent.obj.get("resume", False)
+        if session_id is None:
+            session_id = parent.obj.get("session_id")
+        if ollama_model is None:
+            ollama_model = parent.obj.get("ollama_model")
+
     ensure_docs_installed()
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"
 
@@ -311,6 +350,12 @@ def run(model: str | None, api_base: str | None, temperature: float | None, max_
 
     workflow_manager = WorkflowManager(context_limit=128000)
     current_workflow = workflow_manager.get_current()
+
+    def on_task_complete(completed_item):
+        renderer.print_success(f"Task completed: {completed_item.description}")
+        renderer.print_info(f"Progress: {current_workflow.todo_list.completed_count}/{current_workflow.todo_list.total}")
+
+    current_workflow.set_task_complete_callback(on_task_complete)
 
     from coding_agent.slash_commands import set_workflow_manager
     set_workflow_manager(workflow_manager)
@@ -427,4 +472,5 @@ def run(model: str | None, api_base: str | None, temperature: float | None, max_
 
 
 # Alias for test compatibility
-main = cli
+from click import Group
+main: Group | type = cli  # type: ignore[assignment]

@@ -417,7 +417,8 @@ class TestCLIIntegration:
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
-    def test_cli_valid_config_shows_summary(self, mock_llm, mock_session, tmp_path, monkeypatch):
+    @patch("coding_agent.cli.SessionManager")
+    def test_cli_valid_config_shows_summary(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC #2: CLI shows config summary on successful load."""
         from click.testing import CliRunner
 
@@ -438,7 +439,8 @@ class TestCLIIntegration:
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
-    def test_cli_model_override(self, mock_llm, mock_session, tmp_path, monkeypatch):
+    @patch("coding_agent.cli.SessionManager")
+    def test_cli_model_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC #3: CLI --model flag overrides config."""
         from click.testing import CliRunner
 
@@ -458,7 +460,8 @@ class TestCLIIntegration:
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
-    def test_cli_temperature_override(self, mock_llm, mock_session, tmp_path, monkeypatch):
+    @patch("coding_agent.cli.SessionManager")
+    def test_cli_temperature_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC: CLI --temperature flag shows in output."""
         from click.testing import CliRunner
 
@@ -478,7 +481,8 @@ class TestCLIIntegration:
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
-    def test_cli_max_output_tokens_override(self, mock_llm, mock_session, tmp_path, monkeypatch):
+    @patch("coding_agent.cli.SessionManager")
+    def test_cli_max_output_tokens_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC: CLI --max-output-tokens flag shows in output."""
         from click.testing import CliRunner
 
@@ -498,7 +502,8 @@ class TestCLIIntegration:
 
     @patch("coding_agent.cli.PromptSession")
     @patch("coding_agent.cli.LLMClient")
-    def test_cli_top_p_override(self, mock_llm, mock_session, tmp_path, monkeypatch):
+    @patch("coding_agent.cli.SessionManager")
+    def test_cli_top_p_override(self, mock_session_manager, mock_llm, mock_session, tmp_path, monkeypatch):
         """AC: CLI --top-p flag shows in output."""
         from click.testing import CliRunner
 

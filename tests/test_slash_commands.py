@@ -260,7 +260,10 @@ class TestRegisterSkills:
     def test_skills_registered_as_commands(self, mock_conversation, mock_session_manager, mock_renderer):
         """Skills from SKILL.md are registered in COMMANDS."""
         mock_agent = MagicMock()
-        skills = {"myskill": "Do something useful."}
+        
+        # Import Skill class to create proper mock
+        from coding_agent.skills import Skill
+        skills = {"myskill": Skill(name="myskill", description="Do something useful.", instructions="Do something useful.")}
 
         original_keys = set(COMMANDS.keys())
         try:
@@ -269,13 +272,17 @@ class TestRegisterSkills:
             assert "myskill" in registered
         finally:
             # Clean up dynamic commands after test
-            for name in registered:
-                COMMANDS.pop(name, None)
+            if 'registered' in locals():
+                for name in registered:
+                    COMMANDS.pop(name, None)
 
     def test_skill_command_runs_agent(self, mock_conversation, mock_session_manager, mock_renderer):
         """Invoking a skill command calls agent.run with skill content."""
         mock_agent = MagicMock()
-        skills = {"testskill": "Test skill instructions."}
+        
+        # Import Skill class to create proper mock
+        from coding_agent.skills import Skill
+        skills = {"testskill": Skill(name="testskill", description="Test skill", instructions="Test skill instructions.")}
 
         registered = register_skills(skills, mock_agent)
         try:
@@ -297,7 +304,10 @@ class TestRegisterSkills:
     def test_skill_command_appends_user_args(self, mock_conversation, mock_session_manager, mock_renderer):
         """Extra args passed to a skill are appended to the prompt."""
         mock_agent = MagicMock()
-        skills = {"checkskill": "Base instructions."}
+        
+        # Import Skill class to create proper mock
+        from coding_agent.skills import Skill
+        skills = {"checkskill": Skill(name="checkskill", description="Check skill", instructions="Base instructions.")}
 
         registered = register_skills(skills, mock_agent)
         try:
@@ -318,7 +328,10 @@ class TestRegisterSkills:
     def test_empty_skill_name_skipped(self, mock_conversation, mock_session_manager, mock_renderer):
         """Skills with empty names are not registered."""
         mock_agent = MagicMock()
-        skills = {"": "Some content."}
+        
+        # Import Skill class to create proper mock
+        from coding_agent.skills import Skill
+        skills = {"": Skill(name="", description="", instructions="Some content.")}
 
         registered = register_skills(skills, mock_agent)
         assert "" not in COMMANDS

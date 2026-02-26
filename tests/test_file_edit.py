@@ -44,7 +44,7 @@ class TestFileEdit:
         result = execute({"path": "/nonexistent/file.py", "old_string": "a", "new_string": "b"})
 
         assert result.is_error is True
-        assert "not found" in result.error.lower()
+        assert "resolves outside the workspace" in result.error.lower() or "not found" in result.error.lower()
 
     def test_empty_old_string_error(self, tmp_path):
         """Test empty old_string returns error."""
