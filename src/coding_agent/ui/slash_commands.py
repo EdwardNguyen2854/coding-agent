@@ -490,7 +490,7 @@ def cmd_skills(
 
 def _get_workflows_dir() -> Path:
     """Return the path to the built-in workflows directory."""
-    return Path(__file__).parent / "workflows"
+    return Path(__file__).parent.parent / "workflows"
 
 
 def _load_registry() -> list[dict]:
