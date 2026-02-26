@@ -148,3 +148,33 @@ class TestSessionManager:
         manager = SessionManager(sessions_dir=sessions_dir)
 
         assert sessions_dir.exists()
+
+    def test_create_session_with_null_content_message(self, session_manager):
+        """create_session() handles assistant messages with content=None (tool calls)."""
+        messages = [
+            {"role": "user", "content": "Do something"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1", "name": "shell"}]},
+            {"role": "tool", "tool_call_id": "t1", "content": "done"},
+        ]
+
+        session = session_manager.create_session(
+            first_message="Do something",
+            model="litellm/gpt-4o",
+            messages=messages,
+        )
+
+        assert session is not None
+        loaded = session_manager.load(session["id"])
+        assert loaded is not None
+
+    def test_save_with_null_content_message(self, session_manager):
+        """save() handles new messages with content=None (tool calls)."""
+        session = session_manager.create_session("Test", "model", [])
+
+        new_messages = [
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "t1", "name": "shell"}]},
+        ]
+        session_manager.save(session, new_messages=new_messages)
+
+        loaded = session_manager.load(session["id"])
+        assert loaded is not None
