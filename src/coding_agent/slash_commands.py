@@ -74,8 +74,16 @@ def cmd_clear(args: str, conversation: ConversationManager, session_manager: Ses
 
 def cmd_compact(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Trigger conversation truncation."""
-    conversation.truncate_if_needed(max_tokens=64000)
-    renderer.print_success("Conversation compacted.")
+    session_id = args.strip() or (agent.session_data.get("id") if agent and agent.session_data else None)
+    if session_id:
+        result = session_manager.compact(session_id, max_tokens=64000)
+        if result:
+            renderer.print_success(f"Session compacted. Tokens: {result.get('token_count', 0)}")
+        else:
+            renderer.print_error("Failed to compact session")
+    else:
+        conversation.truncate_if_needed(max_tokens=64000)
+        renderer.print_success("Conversation compacted (in-memory).")
     return True
 
 
@@ -125,21 +133,8 @@ def cmd_todo(args: str, conversation: ConversationManager, session_manager: Sess
         if todos.total == 0:
             renderer.print_info("No tasks in todo list.")
         else:
-            table = Table(title="To Do List", show_header=True, header_style="bold cyan")
-            table.add_column("Status", width=8)
-            table.add_column("Task")
-
-            for item in todos.items:
-                if item.status.value == "completed":
-                    status = "[x] Done"
-                elif item.status.value == "in_progress":
-                    status = "[>] In Progress"
-                else:
-                    status = "[ ] Pending"
-                table.add_row(status, item.description)
-
-            renderer.console.print(table)
-            renderer.print_info(f"Progress: {todos.completed_count}/{todos.total} completed")
+            markdown_output = todos.to_markdown()
+            renderer.console.print(markdown_output)
         return True
 
     action = args.strip().split()[0] if args.strip() else ""
@@ -157,8 +152,7 @@ def cmd_todo(args: str, conversation: ConversationManager, session_manager: Sess
         task_desc = args[5:].strip()
         for item in todos.items:
             if item.description == task_desc and item.status != "completed":
-                todos.complete(item.id)
-                renderer.print_success(f"Marked as done: {task_desc}")
+                workflow.complete_task(item.id)
                 break
         else:
             renderer.print_error(f"Task not found: {task_desc}")

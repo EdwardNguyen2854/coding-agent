@@ -7,6 +7,14 @@ DEFAULT_CONTEXT_LIMIT = 128000
 _CTX_CRITICAL = 90
 _CTX_WARNING = 70
 
+_WORKFLOW_STYLE_MAP = {
+    WorkflowState.AWAITING_PLAN: "fg:ansiyellow",
+    WorkflowState.PLAN_CREATED: "fg:ansicyan",
+    WorkflowState.AWAITING_APPROVAL: "fg:ansimagenta",
+    WorkflowState.EXECUTING: "fg:ansigreen",
+    WorkflowState.COMPLETED: "fg:ansigreen",
+}
+
 
 def make_toolbar(
     conversation: object,
@@ -48,9 +56,10 @@ def make_toolbar(
         ]
 
         if workflow and workflow.state != WorkflowState.IDLE:
+            wf_style = _WORKFLOW_STYLE_MAP.get(workflow.state, "")
             parts += [
                 ("", "  │  "),
-                ("", f"Workflow: {workflow.state.value}"),
+                (wf_style, f"● {workflow.state.value}"),
             ]
 
         if workflow and workflow.todo_list.total > 0:

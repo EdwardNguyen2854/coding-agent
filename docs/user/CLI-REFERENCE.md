@@ -49,7 +49,33 @@ coding-agent --ollama qwen2.5-coder:7b
 | `/approve` | Approve current plan and begin execution |
 | `/reject` | Reject current plan |
 | `/auto-allow on/off` | Toggle tool approval bypass |
+| `/workflow list` | List available YAML workflows |
+| `/workflow run <name>` | Run a workflow by name |
+| `/workflow status` | Show incomplete workflows |
 | `/exit` | Exit the session |
+
+## Workflow commands
+
+Run YAML-defined workflows for automated multi-step tasks:
+
+```bash
+# List all available workflows
+coding-agent workflow list
+
+# Run a workflow (will prompt for variables)
+coding-agent workflow run <name>
+
+# Resume an interrupted workflow
+coding-agent workflow run <name> --resume
+
+# Skip confirmation prompts
+coding-agent workflow run <name> --yolo
+
+# Check status of incomplete workflows
+coding-agent workflow status
+```
+
+See `docs/user/WORKFLOW-USAGE.md` for creating custom workflows.
 
 ## Session storage
 
@@ -68,4 +94,5 @@ Each session stores message history, model, timestamps, and token estimate.
 
 - Setup and troubleshooting: `docs/user/INSTALLATION.md`
 - Skills usage: `docs/user/SKILL-USAGE.md`
+- Workflow usage: `docs/user/WORKFLOW-USAGE.md`
 - Project motivation and architecture: `README.md`

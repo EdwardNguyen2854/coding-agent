@@ -1,6 +1,8 @@
 """Todo list management for tracking implementation tasks."""
 
 import json
+import re
+import tempfile
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -137,32 +139,63 @@ class TodoList:
         items = [TodoItem.from_dict(d) for d in data.get("items", [])]
         return cls(items)
 
+    def to_markdown(self) -> str:
+        """Convert todo list to markdown format."""
+        lines = ["# Todos", ""]
+        for i, item in enumerate(self._items, 1):
+            if item.status == TaskStatus.COMPLETED:
+                status = "[x]"
+            elif item.status == TaskStatus.IN_PROGRESS:
+                status = "[>]"
+            else:
+                status = "[ ]"
+            lines.append(f"{status} {i}. {item.description}")
+        return "\n".join(lines)
+
+    @classmethod
+    def from_markdown(cls, content: str) -> "TodoList":
+        """Parse todo list from markdown content."""
+        items = []
+        for line in content.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = re.match(r"(\[x\]|\[>\]|\[ \])\s*(\d+\.)\s*(.+)", line)
+            if match:
+                status_str, _, desc = match.groups()
+                if status_str == "[x]":
+                    status = TaskStatus.COMPLETED
+                elif status_str == "[>]":
+                    status = TaskStatus.IN_PROGRESS
+                else:
+                    status = TaskStatus.PENDING
+                items.append(TodoItem(id=f"task-{len(items)+1}", description=desc, status=status))
+        return cls(items)
+
     def __repr__(self) -> str:
         return f"TodoList({self.completed_count}/{self.total} completed)"
 
 
-class TodoStore:
-    """Persists todo list to disk."""
+class TodoMarkdownStore:
+    """Persists todo list to markdown file."""
 
     def __init__(self, base_path: Path | None = None):
-        self._base_path = base_path or DEFAULT_DOCS_DIR
+        self._base_path = base_path or Path(tempfile.gettempdir()) / ".coding-agent"
 
-    def save(self, todos: TodoList, name: str = "todo-list") -> Path:
-        """Save todo list to JSON file."""
+    def save(self, todos: TodoList, name: str = "todo") -> Path:
+        """Save todo list to markdown file."""
         self._base_path.mkdir(parents=True, exist_ok=True)
-        file_path = self._base_path / f"{name}.json"
-        with open(file_path, "w") as f:
-            json.dump(todos.to_dict(), f, indent=2)
+        file_path = self._base_path / f"{name}.md"
+        file_path.write_text(todos.to_markdown(), encoding="utf-8")
         return file_path
 
-    def load(self, name: str = "todo-list") -> TodoList | None:
-        """Load todo list from JSON file."""
-        file_path = self._base_path / f"{name}.json"
+    def load(self, name: str = "todo") -> TodoList | None:
+        """Load todo list from markdown file."""
+        file_path = self._base_path / f"{name}.md"
         if not file_path.exists():
             return None
         try:
-            with open(file_path) as f:
-                data = json.load(f)
-            return TodoList.from_dict(data)
+            content = file_path.read_text(encoding="utf-8")
+            return TodoList.from_markdown(content)
         except Exception:
             return None
