@@ -1,0 +1,32 @@
+name: analyze-codebase
+description: "Analyze codebase structure, dependencies, and architecture for understanding"
+version: "1.0"
+
+variables:
+  target_path:
+    default: "."
+    description: "Path to analyze (default: current directory)"
+  analysis_type:
+    default: "full"
+    enum: ["structure", "dependencies", "architecture", "full"]
+    description: "Type of analysis to perform"
+
+steps:
+  - id: explore
+    title: Explore Structure
+    description: "Analyze project file structure"
+    actions:
+      - task: "Explore {target_path} structure and identify key components"
+
+  - id: analyze-deps
+    title: Analyze Dependencies
+    description: "Review dependencies and their usage"
+    condition: "analysis_type in ['dependencies', 'full']"
+    actions:
+      - task: "Analyze dependencies and their usage patterns"
+
+  - id: summarize
+    title: Summarize Findings
+    description: "Present analysis summary"
+    actions:
+      - task: "Summarize codebase analysis with key findings"

@@ -1,0 +1,27 @@
+name: document-project
+description: "Analyze and document existing codebase for AI-assisted development context"
+version: "1.0"
+
+variables:
+  output_file:
+    default: "docs/project-context.md"
+    description: "Output path for generated documentation"
+
+steps:
+  - id: scan
+    title: Scan Codebase
+    description: "Analyze project structure and patterns"
+    actions:
+      - task: "Scan codebase structure, patterns, and key files"
+
+  - id: document
+    title: Generate Documentation
+    description: "Create comprehensive project documentation"
+    actions:
+      - task: "Generate project-context.md with rules and patterns"
+
+  - id: validate
+    title: Validate Output
+    description: "Verify documentation is complete"
+    actions:
+      - task: "Validate generated documentation covers essential AI context"

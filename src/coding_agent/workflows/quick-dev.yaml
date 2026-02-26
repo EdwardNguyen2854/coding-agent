@@ -1,0 +1,37 @@
+name: quick-dev
+description: "Flexible development - execute technical specifications or direct instructions with optional planning"
+version: "1.0"
+
+variables:
+  task:
+    required: true
+    description: "Task description or tech spec to implement"
+  plan_first:
+    default: "true"
+    description: "Whether to create a plan before implementing"
+
+steps:
+  - id: clarify
+    title: Clarify Requirements
+    description: "Understand what needs to be built"
+    actions:
+      - task: "Ask clarifying questions if needed to understand {task}"
+
+  - id: plan
+    title: Create Plan
+    description: "Create implementation plan"
+    condition: "plan_first == true"
+    actions:
+      - task: "Create implementation plan for {task}"
+
+  - id: implement
+    title: Implement
+    description: "Execute the implementation"
+    actions:
+      - task: "Implement {task} according to plan"
+
+  - id: verify
+    title: Verify
+    description: "Verify implementation works"
+    actions:
+      - task: "Verify implementation by running tests or manual testing"

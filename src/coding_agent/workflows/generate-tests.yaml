@@ -1,0 +1,36 @@
+name: generate-tests
+description: "Generate automated tests for existing code using project's test framework"
+version: "1.0"
+
+variables:
+  target_path:
+    required: true
+    description: "Path to source file or directory to generate tests for"
+  test_framework:
+    default: "auto"
+    description: "Test framework to use (auto-detect if not specified)"
+
+steps:
+  - id: detect-framework
+    title: Detect Test Framework
+    description: "Check project for existing test framework"
+    actions:
+      - task: "Detect test framework from package.json, existing tests, or project type"
+
+  - id: generate-tests
+    title: Generate Tests
+    description: "Create test files for target"
+    actions:
+      - task: "Generate tests for {target_path} using {test_framework}"
+
+  - id: run-tests
+    title: Run Tests
+    description: "Execute tests to verify they pass"
+    actions:
+      - task: "Run generated tests and fix any failures"
+
+  - id: summary
+    title: Create Summary
+    description: "Output test generation summary"
+    actions:
+      - task: "Generate summary of created tests and coverage"

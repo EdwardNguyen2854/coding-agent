@@ -1,0 +1,32 @@
+name: code-review
+description: "Perform an adversarial code review that finds specific problems. Challenges code quality, test coverage, security, performance. Must find issues and can auto-fix with user approval."
+version: "1.0"
+
+variables:
+  target_path:
+    required: true
+    description: "Path to file or directory to review"
+  focus_areas:
+    default: "code quality,test coverage,security,performance"
+    description: "Comma-separated areas to focus on"
+
+steps:
+  - id: analyze
+    title: Analyze Code
+    description: "Scan the target code for issues"
+    actions:
+      - task: "Analyze {target_path} for issues in areas: {focus_areas}"
+
+  - id: report
+    title: Report Issues
+    description: "Present findings in structured format"
+    confirm: true
+    actions:
+      - task: "Report findings with severity levels and suggested fixes"
+
+  - id: fix
+    title: Apply Fixes
+    description: "Apply user-approved fixes"
+    condition: "user_approves_fixes"
+    actions:
+      - task: "Apply approved fixes to {target_path}"

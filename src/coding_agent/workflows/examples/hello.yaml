@@ -1,0 +1,13 @@
+name: hello
+description: Simple test workflow to verify workflow system
+version: "1.0"
+
+variables:
+  name:
+    default: "World"
+
+steps:
+  - id: greet
+    title: Say Hello
+    actions:
+      - task: "Say hello to {name}"

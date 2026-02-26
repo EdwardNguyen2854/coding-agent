@@ -1,0 +1,30 @@
+workflows:
+  - name: default
+    description: Standard plan → approve → execute workflow
+    type: yaml
+    entry: default.yaml
+
+  - name: quick-dev
+    description: Flexible development - execute technical specifications or direct instructions with optional planning
+    type: yaml
+    entry: quick-dev.yaml
+
+  - name: analyze-codebase
+    description: Analyze codebase structure and generate insights
+    type: yaml
+    entry: analyze-codebase.yaml
+
+  - name: document-project
+    description: Generate project documentation
+    type: yaml
+    entry: document-project.yaml
+
+  - name: generate-tests
+    description: Generate comprehensive tests for existing code
+    type: yaml
+    entry: generate-tests.yaml
+
+  - name: code-review
+    description: Perform code review with structured feedback
+    type: yaml
+    entry: code-review.yaml

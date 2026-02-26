@@ -1,0 +1,27 @@
+name: default
+description: Standard plan → approve → execute workflow
+version: "1.0"
+
+variables:
+  task:
+    required: true
+    description: "Task description to execute"
+
+steps:
+  - id: plan
+    title: Create Plan
+    description: "Create implementation plan"
+    actions:
+      - task: "Create a detailed implementation plan for: {task}"
+
+  - id: implement
+    title: Implement
+    description: "Execute the implementation"
+    actions:
+      - task: "Implement the plan"
+
+  - id: verify
+    title: Verify
+    description: "Verify implementation works"
+    actions:
+      - task: "Verify the implementation"
