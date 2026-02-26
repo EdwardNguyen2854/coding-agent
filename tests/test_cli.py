@@ -110,7 +110,7 @@ class TestPackageMetadata:
     def test_version_defined(self):
         """Package version is accessible."""
         from coding_agent import __version__
-        assert __version__ == "0.10.9"
+        assert __version__ == "0.11.0"
 
     def test_package_importable(self):
         """Package can be imported."""
