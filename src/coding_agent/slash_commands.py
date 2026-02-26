@@ -18,7 +18,7 @@ from coding_agent.project_instructions import find_git_root
 from coding_agent.renderer import Renderer
 from coding_agent.session import SessionManager
 from coding_agent.skills import Skill
-from coding_agent.workflow import WorkflowManager, WorkflowState, Plan
+from coding_agent.workflow_impl import WorkflowManager, WorkflowState, Plan
 
 if TYPE_CHECKING:
     from coding_agent.agent import Agent
@@ -488,6 +488,115 @@ def cmd_skills(
     return True
 
 
+def _get_workflows_dir() -> Path:
+    """Return the path to the built-in workflows directory."""
+    return Path(__file__).parent / "workflows"
+
+
+def _load_registry() -> list[dict]:
+    """Load workflow entries from registry.yaml."""
+    registry_path = _get_workflows_dir() / "registry" / "registry.yaml"
+    if not registry_path.exists():
+        return []
+    with open(registry_path, encoding="utf-8") as f:
+        data = yaml.safe_load(f)
+    return data.get("workflows", []) if data else []
+
+
+def _load_workflow_yaml(entry: str) -> dict | None:
+    """Load a workflow YAML file by its registry entry filename."""
+    workflows_dir = _get_workflows_dir()
+    yaml_path = workflows_dir / entry
+    if not yaml_path.exists():
+        yaml_path = workflows_dir / Path(entry).name
+    if not yaml_path.exists():
+        return None
+    with open(yaml_path, encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def cmd_workflow(
+    args: str,
+    conversation: ConversationManager,
+    session_manager: SessionManager,
+    renderer: Renderer,
+    llm_client: LLMClient | None = None,
+    agent: "Agent | None" = None,
+) -> bool:
+    """List available workflows or run one by name."""
+    registry = _load_registry()
+
+    if not args:
+        if not registry:
+            renderer.print_info("No workflows available.")
+            return True
+        table = Table(title="Available Workflows", show_header=True, header_style="bold cyan")
+        table.add_column("Name", style="cyan")
+        table.add_column("Description")
+        for wf in registry:
+            table.add_row(wf.get("name", ""), wf.get("description", ""))
+        renderer.console.print(table)
+        renderer.print_info("Run a workflow: /workflow <name> [input]")
+        return True
+
+    parts = args.strip().split(maxsplit=1)
+    name = parts[0]
+    user_input = parts[1] if len(parts) > 1 else ""
+
+    entry = next((wf for wf in registry if wf.get("name") == name), None)
+    if not entry:
+        renderer.print_error(f"Unknown workflow: {name}. Use /workflow to list available workflows.")
+        return True
+
+    wf_data = _load_workflow_yaml(entry.get("entry", f"{name}.yaml"))
+    if not wf_data:
+        renderer.print_error(f"Could not load workflow file for: {name}")
+        return True
+
+    wf_name = wf_data.get("name", name)
+    wf_desc = wf_data.get("description", "")
+    steps = wf_data.get("steps", [])
+    variables = wf_data.get("variables", {})
+
+    # Build variable substitution map from user_input
+    var_map: dict[str, str] = {}
+    for var_name, var_meta in variables.items():
+        if isinstance(var_meta, dict):
+            var_map[var_name] = user_input if user_input else var_meta.get("default", "")
+        else:
+            var_map[var_name] = user_input
+
+    def _substitute(text: str) -> str:
+        for k, v in var_map.items():
+            text = text.replace(f"{{{k}}}", v)
+        return text
+
+    prompt_lines = [f"Execute the '{wf_name}' workflow.", f"Goal: {wf_desc}"]
+    if user_input:
+        prompt_lines.append(f"Input: {user_input}")
+    prompt_lines.append("\nFollow these steps in order:")
+
+    for i, step in enumerate(steps, 1):
+        title = step.get("title", step.get("id", f"Step {i}"))
+        step_desc = step.get("description", "")
+        actions = step.get("actions", [])
+        prompt_lines.append(f"\n## Step {i}: {title}")
+        if step_desc:
+            prompt_lines.append(f"{step_desc}")
+        for action in actions:
+            if isinstance(action, dict) and "task" in action:
+                prompt_lines.append(f"- {_substitute(action['task'])}")
+
+    prompt = "\n".join(prompt_lines)
+
+    renderer.print_info(f"Running workflow: {wf_name}")
+    if agent:
+        agent.run(prompt)
+    else:
+        renderer.print_error("No agent available to run workflow.")
+    return True
+
+
 COMMANDS: dict[str, SlashCommand] = {
     "help": SlashCommand("help", cmd_help, "Show help message", False),
     "clear": SlashCommand("clear", cmd_clear, "Clear conversation history", False),
@@ -502,6 +611,7 @@ COMMANDS: dict[str, SlashCommand] = {
     "approve": SlashCommand("approve", cmd_approve, "Approve implementation plan", False),
     "reject": SlashCommand("reject", cmd_reject, "Reject implementation plan", False),
     "auto-allow": SlashCommand("auto-allow", cmd_auto_allow, "Toggle auto-allow mode for approvals", False),
+    "workflow": SlashCommand("workflow", cmd_workflow, "List or run a YAML workflow", False),
 }
 
 
