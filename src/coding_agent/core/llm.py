@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 import litellm
 
-from coding_agent.config.config import AgentConfig, is_ollama_model
+from coding_agent.config.config import AgentConfig, ModelCapabilities, get_model_capabilities, is_ollama_model, set_model_capabilities
 from coding_agent.tools import get_openai_tools
 
 
@@ -29,6 +29,29 @@ class LLMClient:
         self.max_output_tokens = config.max_output_tokens
         self.top_p = config.top_p
         self.last_response = None
+        self._capabilities: ModelCapabilities | None = None
+
+    def set_capabilities(self, caps: ModelCapabilities) -> None:
+        """Set the model capabilities."""
+        self._capabilities = caps
+
+    def get_capabilities(self) -> ModelCapabilities | None:
+        """Get the model capabilities."""
+        return self._capabilities
+
+    def _get_sampling_params(self) -> dict:
+        """Get sampling parameters based on model capabilities."""
+        params = {}
+        caps = self._capabilities
+        if caps is None or caps.temperature_supported:
+            params["temperature"] = self.temperature
+        else:
+            params["temperature"] = 0.0
+        if caps is None or caps.top_p_supported:
+            params["top_p"] = self.top_p
+        else:
+            params["top_p"] = 1.0
+        return params
 
     def _handle_llm_error(self, error: Exception) -> None:
         """Convert exceptions from LiteLLM calls to ConnectionError with clear messages.
@@ -107,6 +130,7 @@ class LLMClient:
                 authentication, timeout, and server errors.
         """
         try:
+            params = self._get_sampling_params()
             litellm.completion(
                 model=self.model,
                 messages=[{"role": "user", "content": "ping"}],
@@ -114,8 +138,7 @@ class LLMClient:
                 api_key=self.api_key,
                 max_tokens=1,
                 timeout=10,
-                temperature=self.temperature,
-                top_p=self.top_p,
+                **params,
             )
         except Exception as e:
             self._handle_llm_error(e)
@@ -135,6 +158,7 @@ class LLMClient:
         """
         self.last_response = None
         chunks = []
+        sampling_params = self._get_sampling_params()
         try:
             response_stream = litellm.completion(
                 model=self.model,
@@ -144,9 +168,8 @@ class LLMClient:
                 stream=True,
                 timeout=300,
                 tools=tools,
-                temperature=self.temperature,
                 max_tokens=self.max_output_tokens,
-                top_p=self.top_p,
+                **sampling_params,
             )
             for chunk in response_stream:
                 chunks.append(chunk)
@@ -176,3 +199,41 @@ class LLMClient:
                         "arguments": arguments,
                     })
         return result
+
+
+def detect_model_capabilities(client: "LLMClient") -> ModelCapabilities:
+    """Detect if a model supports temperature and top_p parameters.
+
+    Makes a minimal request with temperature=0.5, top_p=0.9 to test support.
+
+    Args:
+        client: LLMClient instance to test
+
+    Returns:
+        ModelCapabilities indicating which parameters are supported
+    """
+    model = client.model
+
+    cached = get_model_capabilities(model)
+    if cached:
+        return cached
+
+    try:
+        litellm.completion(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            api_base=client.api_base,
+            api_key=client.api_key,
+            max_tokens=1,
+            temperature=0.5,
+            top_p=0.9,
+            timeout=10,
+        )
+        caps = ModelCapabilities(temperature_supported=True, top_p_supported=True)
+    except litellm.BadRequestError:
+        caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
+    except Exception:
+        caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
+
+    set_model_capabilities(model, caps)
+    return caps

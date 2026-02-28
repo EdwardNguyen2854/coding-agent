@@ -1,5 +1,6 @@
 """Configuration management - Pydantic model with YAML loading and CLI overrides."""
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -7,6 +8,26 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 
 DEFAULT_CONFIG_DIR = Path.home() / ".coding-agent"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.yaml"
+
+
+@dataclass
+class ModelCapabilities:
+    """Model capability detection results."""
+    temperature_supported: bool = True
+    top_p_supported: bool = True
+
+
+_model_capabilities_cache: dict[str, ModelCapabilities] = {}
+
+
+def get_model_capabilities(model: str) -> ModelCapabilities | None:
+    """Get cached model capabilities."""
+    return _model_capabilities_cache.get(model)
+
+
+def set_model_capabilities(model: str, caps: ModelCapabilities) -> None:
+    """Cache model capabilities."""
+    _model_capabilities_cache[model] = caps
 
 
 def get_docs_dir(cwd: Path | None = None) -> Path:
@@ -93,6 +114,9 @@ class AgentConfig(BaseModel):
     temperature: float = 0.0
     max_output_tokens: int = 4096
     top_p: float = 1.0
+
+    # Force temperature detection bypass
+    force_temperature: bool = False
 
     # Context management
     max_context_tokens: int = 128000
@@ -246,3 +270,39 @@ def ensure_docs_installed() -> None:
                     continue
                 if subitem.is_file():
                     shutil.copy2(str(subitem), subdest)
+
+
+def _capabilities_cache_path() -> Path:
+    """Get the path to the model capabilities cache file."""
+    return DEFAULT_CONFIG_DIR / "model_capabilities.json"
+
+
+def save_model_capabilities_cache() -> None:
+    """Persist model capabilities cache to disk."""
+    if not _model_capabilities_cache:
+        return
+    cache_path = _capabilities_cache_path()
+    DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    import json
+    data = {
+        model: {"temperature_supported": caps.temperature_supported, "top_p_supported": caps.top_p_supported}
+        for model, caps in _model_capabilities_cache.items()
+    }
+    cache_path.write_text(json.dumps(data), encoding="utf-8")
+
+
+def load_model_capabilities_cache() -> None:
+    """Load model capabilities cache from disk."""
+    cache_path = _capabilities_cache_path()
+    if not cache_path.exists():
+        return
+    import json
+    try:
+        data = json.loads(cache_path.read_text(encoding="utf-8"))
+        for model, caps in data.items():
+            _model_capabilities_cache[model] = ModelCapabilities(
+                temperature_supported=caps.get("temperature_supported", False),
+                top_p_supported=caps.get("top_p_supported", False),
+            )
+    except (json.JSONDecodeError, OSError):
+        pass

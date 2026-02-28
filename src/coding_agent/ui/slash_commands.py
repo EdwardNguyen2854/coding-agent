@@ -13,7 +13,7 @@ from rich.table import Table
 
 from coding_agent.config import DEFAULT_CONFIG_FILE, DEFAULT_DOCS_DIR, SkillSetting, load_config
 from coding_agent.core.conversation import ConversationManager
-from coding_agent.core.llm import LLMClient
+from coding_agent.core.llm import LLMClient, detect_model_capabilities
 from coding_agent.config.project_instructions import find_git_root
 from coding_agent.ui.renderer import Renderer
 from coding_agent.state.session import SessionManager
@@ -307,6 +307,91 @@ def cmd_model(args: str, conversation: ConversationManager, session_manager: Ses
     # Model is valid - switch to it
     llm_client.model = model_name
     renderer.print_success(f"Switched to model: {model_name}")
+
+    # Detect model capabilities
+    caps = detect_model_capabilities(llm_client)
+    llm_client.set_capabilities(caps)
+    renderer.print_info(f"Detected: temperature={caps.temperature_supported}, top_p={caps.top_p_supported}")
+    if not caps.temperature_supported or not caps.top_p_supported:
+        renderer.print_info("Using safe defaults (temp=0.0, top_p=1.0)")
+    return True
+
+
+def cmd_temp(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Set or show temperature at runtime."""
+    if llm_client is None:
+        renderer.print_error("Temperature control is not available in this context.")
+        return True
+
+    if not args:
+        renderer.print_info(f"Current temperature: {llm_client.temperature}")
+        return True
+
+    try:
+        value = float(args.strip())
+    except ValueError:
+        renderer.print_error("Invalid temperature value. Use a number between 0.0 and 2.0.")
+        return True
+
+    if value < 0.0 or value > 2.0:
+        renderer.print_error("Temperature must be between 0.0 and 2.0.")
+        return True
+
+    caps = llm_client.get_capabilities()
+    if caps and not caps.temperature_supported:
+        renderer.print_error(f"Temperature not supported for {llm_client.model}. Use /model to switch.")
+        return True
+
+    llm_client.temperature = value
+    renderer.print_success(f"Temperature set to {value}")
+    return True
+
+
+def cmd_top_p(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Set or show top_p at runtime."""
+    if llm_client is None:
+        renderer.print_error("top_p control is not available in this context.")
+        return True
+
+    if not args:
+        renderer.print_info(f"Current top_p: {llm_client.top_p}")
+        return True
+
+    try:
+        value = float(args.strip())
+    except ValueError:
+        renderer.print_error("Invalid top_p value. Use a number between 0.0 and 1.0.")
+        return True
+
+    if value < 0.0 or value > 1.0:
+        renderer.print_error("top_p must be between 0.0 and 1.0.")
+        return True
+
+    caps = llm_client.get_capabilities()
+    if caps and not caps.top_p_supported:
+        renderer.print_error(f"top_p not supported for {llm_client.model}. Use /model to switch.")
+        return True
+
+    llm_client.top_p = value
+    renderer.print_success(f"top_p set to {value}")
+    return True
+
+
+def cmd_model_info(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Show current model capabilities."""
+    if llm_client is None:
+        renderer.print_error("Model info is not available in this context.")
+        return True
+
+    caps = llm_client.get_capabilities()
+    renderer.print_info(f"Model: {llm_client.model}")
+    if caps:
+        renderer.print_info(f"Temperature supported: {caps.temperature_supported}")
+        renderer.print_info(f"top_p supported: {caps.top_p_supported}")
+    else:
+        renderer.print_info("Capabilities: Not yet detected (run /model to detect)")
+    renderer.print_info(f"Current temperature: {llm_client.temperature}")
+    renderer.print_info(f"Current top_p: {llm_client.top_p}")
     return True
 
 
@@ -603,6 +688,7 @@ COMMANDS: dict[str, SlashCommand] = {
     "compact": SlashCommand("compact", cmd_compact, "Manually trigger conversation truncation", False),
     "sessions": SlashCommand("sessions", cmd_sessions, "List saved sessions", False),
     "model": SlashCommand("model", cmd_model, "Switch to a different model", True),
+    "model-info": SlashCommand("model-info", cmd_model_info, "Show current model capabilities", False),
     "init": SlashCommand("init", cmd_init, "Create AGENTS.md template in project root", False),
     "skills": SlashCommand("skills", cmd_skills, "Configure skills (toggle enabled/disabled)", False),
     "exit": SlashCommand("exit", cmd_exit, "Exit the session", False),
@@ -612,6 +698,8 @@ COMMANDS: dict[str, SlashCommand] = {
     "reject": SlashCommand("reject", cmd_reject, "Reject implementation plan", False),
     "auto-allow": SlashCommand("auto-allow", cmd_auto_allow, "Toggle auto-allow mode for approvals", False),
     "workflow": SlashCommand("workflow", cmd_workflow, "List or run a YAML workflow", False),
+    "temp": SlashCommand("temp", cmd_temp, "Set temperature (0.0-2.0)", True),
+    "top-p": SlashCommand("top-p", cmd_top_p, "Set top_p (0.0-1.0)", True),
 }
 
 
