@@ -54,6 +54,37 @@ coding-agent --ollama qwen2.5-coder:7b
 | `/workflow status` | Show incomplete workflows |
 | `/exit` | Exit the session |
 
+## Quick access commands (@)
+
+Run workflows directly with shorter commands:
+
+| Command | Description |
+|---|---|
+| `@default` | Run the default workflow |
+| `@code <task>` | Run quick-dev workflow for coding tasks |
+| `@review [path]` | Run code-review workflow |
+| `@analyze [path]` | Run analyze-codebase workflow |
+
+## Lookup commands (#)
+
+Search for symbols and files in your codebase:
+
+| Command | Description |
+|---|---|
+| `#symbol <name>` | Search for a symbol (function, class) |
+| `#file <filename>` | Search for a file |
+
+## Shell commands (!)
+
+Quick shell command shortcuts:
+
+| Command | Description |
+|---|---|
+| `!run <command>` | Run a shell command |
+| `!test` | Run tests |
+| `!lint` | Run linter |
+| `!tidy` | Run code formatter
+
 ## Workflow commands
 
 Run YAML-defined workflows for automated multi-step tasks:

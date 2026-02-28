@@ -40,6 +40,8 @@ from coding_agent.config import (
     OLLAMA_DEFAULT_API_BASE,
     apply_cli_overrides,
     ensure_docs_installed,
+    get_runtime_config,
+    set_runtime_config,
 )
 from coding_agent.core.conversation import ConversationManager
 from coding_agent.core.llm import LLMClient
@@ -98,6 +100,29 @@ def _restore_conversation(conversation: ConversationManager, messages: list[dict
             conversation.add_message(msg["role"], msg.get("content", ""))
 
     return len([m for m in messages if m.get("role") != "system"])
+
+
+def _apply_runtime_config(llm_client: LLMClient, runtime_config: dict) -> None:
+    """Apply runtime config overrides to LLM client.
+
+    Args:
+        llm_client: LLMClient instance to update
+        runtime_config: Dict with runtime override values
+    """
+    if not runtime_config:
+        return
+    if runtime_config.get("model"):
+        llm_client.model = runtime_config["model"]
+    if runtime_config.get("api_key"):
+        llm_client.api_key = runtime_config["api_key"]
+    if runtime_config.get("api_base"):
+        llm_client.api_base = runtime_config["api_base"]
+    if runtime_config.get("temperature") is not None:
+        llm_client.temperature = runtime_config["temperature"]
+    if runtime_config.get("top_p") is not None:
+        llm_client.top_p = runtime_config["top_p"]
+    if runtime_config.get("max_output_tokens") is not None:
+        llm_client.max_output_tokens = runtime_config["max_output_tokens"]
 
 
 DEFAULT_SYSTEM_PROMPT = SYSTEM_PROMPT
@@ -346,6 +371,12 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             msg_count = _restore_conversation(conversation, loaded_session.get("messages", []))
             renderer.print_info(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
             agent.set_session(session_manager, session_data)
+            # Apply runtime config overrides
+            runtime_config = loaded_session.get("runtime_config", {})
+            if runtime_config:
+                set_runtime_config(**runtime_config)
+                _apply_runtime_config(llm_client, runtime_config)
+                renderer.print_info("Runtime config restored from session")
         else:
             renderer.print_info("No previous sessions found. Starting a new session.")
     elif session_id:
@@ -355,6 +386,12 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             msg_count = _restore_conversation(conversation, loaded_session.get("messages", []))
             renderer.print_info(f"Resuming session: {loaded_session['title']} ({msg_count} messages)")
             agent.set_session(session_manager, session_data)
+            # Apply runtime config overrides
+            runtime_config = loaded_session.get("runtime_config", {})
+            if runtime_config:
+                set_runtime_config(**runtime_config)
+                _apply_runtime_config(llm_client, runtime_config)
+                renderer.print_info("Runtime config restored from session")
         else:
             renderer.print_error(f"Session not found: {session_id}")
             sys.exit(1)

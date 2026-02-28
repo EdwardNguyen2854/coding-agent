@@ -12,10 +12,13 @@ from coding_agent.config.config import (
     SkillsConfig,
     DEFAULT_SKILLS,
     apply_cli_overrides,
+    clear_runtime_config,
     ensure_docs_installed,
     get_docs_dir,
+    get_runtime_config,
     is_ollama_model,
     load_config,
+    set_runtime_config,
 )
 from coding_agent.config.project_instructions import (
     find_git_root,
