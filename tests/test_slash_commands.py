@@ -5,11 +5,17 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from coding_agent.ui.slash_commands import (
+    AT_COMMANDS,
+    BANG_COMMANDS,
     COMMANDS,
+    CommandPrefix,
+    HASH_COMMANDS,
+    SLASH_COMMANDS,
     cmd_exit,
     cmd_help,
     cmd_init,
     execute_command,
+    is_command,
     is_slash_command,
     parse_command,
     register_skills,
@@ -46,8 +52,43 @@ def mock_llm_client():
     return mock
 
 
+class TestIsCommand:
+    """Tests for is_command function."""
+
+    def test_slash_command_returns_true(self):
+        """Slash commands return True."""
+        assert is_command("/help") is True
+        assert is_command("/model gpt-4") is True
+        assert is_command("/exit") is True
+
+    def test_at_command_returns_true(self):
+        """@ commands return True."""
+        assert is_command("@default") is True
+        assert is_command("@code task") is True
+
+    def test_hash_command_returns_true(self):
+        """# commands return True."""
+        assert is_command("#symbol foo") is True
+        assert is_command("#file bar") is True
+
+    def test_bang_command_returns_true(self):
+        """! commands return True."""
+        assert is_command("!run ls") is True
+        assert is_command("!test") is True
+
+    def test_regular_text_returns_false(self):
+        """Regular text returns False."""
+        assert is_command("hello") is False
+        assert is_command("hello world") is False
+
+    def test_empty_string_returns_false(self):
+        """Empty string returns False."""
+        assert is_command("") is False
+        assert is_command("   ") is False
+
+
 class TestIsSlashCommand:
-    """Tests for is_slash_command function."""
+    """Tests for is_slash_command function (backward compatibility)."""
 
     def test_slash_command_returns_true(self):
         """Slash commands return True."""
@@ -58,7 +99,6 @@ class TestIsSlashCommand:
     def test_regular_text_returns_false(self):
         """Regular text returns False."""
         assert is_slash_command("hello") is False
-        # Text with leading whitespace but no leading slash
         assert is_slash_command("hello world") is False
 
     def test_empty_string_returns_false(self):
@@ -66,62 +106,151 @@ class TestIsSlashCommand:
         assert is_slash_command("") is False
         assert is_slash_command("   ") is False
 
+    def test_other_prefixes_return_false(self):
+        """Other prefixes return False for is_slash_command."""
+        assert is_slash_command("@default") is False
+        assert is_slash_command("#symbol foo") is False
+        assert is_slash_command("!run ls") is False
+
 
 class TestParseCommand:
     """Tests for parse_command function."""
 
-    def test_simple_command(self):
-        """Parse simple command without args."""
-        cmd, args = parse_command("/help")
+    def test_simple_slash_command(self):
+        """Parse simple slash command without args."""
+        prefix, cmd, args = parse_command("/help")
+        assert prefix == CommandPrefix.SLASH
         assert cmd == "help"
         assert args == ""
 
-    def test_command_with_args(self):
-        """Parse command with args."""
-        cmd, args = parse_command("/model litellm/gpt-4o")
+    def test_slash_command_with_args(self):
+        """Parse slash command with args."""
+        prefix, cmd, args = parse_command("/model litellm/gpt-4o")
+        assert prefix == CommandPrefix.SLASH
         assert cmd == "model"
         assert args == "litellm/gpt-4o"
 
+    def test_at_command(self):
+        """Parse @ command."""
+        prefix, cmd, args = parse_command("@default")
+        assert prefix == CommandPrefix.AT
+        assert cmd == "default"
+        assert args == ""
+
+    def test_at_command_with_args(self):
+        """Parse @ command with args."""
+        prefix, cmd, args = parse_command("@code fix the bug")
+        assert prefix == CommandPrefix.AT
+        assert cmd == "code"
+        assert args == "fix the bug"
+
+    def test_hash_command(self):
+        """Parse # command."""
+        prefix, cmd, args = parse_command("#symbol MyClass")
+        assert prefix == CommandPrefix.HASH
+        assert cmd == "symbol"
+        assert args == "MyClass"
+
+    def test_bang_command(self):
+        """Parse ! command."""
+        prefix, cmd, args = parse_command("!run ls -la")
+        assert prefix == CommandPrefix.BANG
+        assert cmd == "run"
+        assert args == "ls -la"
+
     def test_case_insensitive(self):
         """Commands are case insensitive."""
-        cmd, args = parse_command("/HELP")
+        prefix, cmd, args = parse_command("/HELP")
+        assert prefix == CommandPrefix.SLASH
         assert cmd == "help"
 
     def test_whitespace_handling(self):
         """Whitespace is handled correctly."""
-        cmd, args = parse_command("  /help  ")
+        prefix, cmd, args = parse_command("  /help  ")
+        assert prefix == CommandPrefix.SLASH
         assert cmd == "help"
+        assert args == ""
+
+    def test_non_command_returns_none_prefix(self):
+        """Non-command text returns None prefix."""
+        prefix, cmd, args = parse_command("hello world")
+        assert prefix is None
+        assert cmd == ""
         assert args == ""
 
     def test_multiple_args(self):
         """Multiple args are captured."""
-        cmd, args = parse_command("/model arg1 arg2")
+        prefix, cmd, args = parse_command("/model arg1 arg2")
+        assert prefix == CommandPrefix.SLASH
         assert cmd == "model"
         assert args == "arg1 arg2"
 
 
-class TestHelpCommand:
-    """Tests for help command."""
+class TestCommandRegistries:
+    """Tests for command registries."""
 
-    def test_cmd_help_displays_help(self, mock_conversation, mock_session_manager, mock_renderer):
-        """Help command shows help text."""
-        result = cmd_help("", mock_conversation, mock_session_manager, mock_renderer)
-        assert result is True
+    def test_slash_commands_exist(self):
+        """SLASH_COMMANDS contains expected commands."""
+        assert "help" in SLASH_COMMANDS
+        assert "exit" in SLASH_COMMANDS
+        assert "model" in SLASH_COMMANDS
 
+    def test_at_commands_exist(self):
+        """AT_COMMANDS contains expected commands."""
+        assert "default" in AT_COMMANDS
+        assert "code" in AT_COMMANDS
+        assert "review" in AT_COMMANDS
+        assert "analyze" in AT_COMMANDS
 
-class TestExitCommand:
-    """Tests for exit command."""
+    def test_hash_commands_exist(self):
+        """HASH_COMMANDS contains expected commands."""
+        assert "symbol" in HASH_COMMANDS
+        assert "file" in HASH_COMMANDS
 
-    def test_cmd_exit_returns_false(self, mock_conversation, mock_session_manager, mock_renderer):
-        """Exit command returns False to signal session end."""
-        result = cmd_exit("", mock_conversation, mock_session_manager, mock_renderer)
-        assert result is False
+    def test_bang_commands_exist(self):
+        """BANG_COMMANDS contains expected commands."""
+        assert "run" in BANG_COMMANDS
+        assert "test" in BANG_COMMANDS
+        assert "lint" in BANG_COMMANDS
+        assert "tidy" in BANG_COMMANDS
 
 
 class TestExecuteCommand:
     """Tests for execute_command function."""
 
-    def test_unknown_command_shows_error(self, mock_conversation, mock_session_manager, mock_renderer, mock_llm_client):
+    def test_execute_slash_command(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Execute slash command successfully."""
+        result = execute_command("/help", mock_conversation, mock_session_manager, mock_renderer)
+        assert result is True
+        mock_renderer.console.print.assert_called()
+
+    def test_execute_at_command(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Execute @ command."""
+        result = execute_command("@default", mock_conversation, mock_session_manager, mock_renderer, agent=MagicMock())
+        assert result is True
+
+    def test_execute_hash_command(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Execute # command."""
+        result = execute_command("#symbol MyClass", mock_conversation, mock_session_manager, mock_renderer, agent=MagicMock())
+        assert result is True
+
+    def test_execute_bang_command(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Execute ! command."""
+        result = execute_command("!test", mock_conversation, mock_session_manager, mock_renderer, agent=MagicMock())
+        assert result is True
+
+    def test_unknown_command_shows_error(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Unknown command shows error."""
+        result = execute_command("/nonexistent", mock_conversation, mock_session_manager, mock_renderer)
+        assert result is True
+        mock_renderer.print_error.assert_called()
+
+    def test_non_command_returns_none(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Non-command text returns None."""
+        result = execute_command("hello world", mock_conversation, mock_session_manager, mock_renderer)
+        assert result is None
+
+    def test_unknown_command_shows_error_with_llm(self, mock_conversation, mock_session_manager, mock_renderer, mock_llm_client):
         """Unknown command shows error message."""
         result = execute_command(
             "/unknown",
@@ -144,8 +273,26 @@ class TestExecuteCommand:
         assert result is True
 
 
+class TestHelpCommand:
+    """Tests for help command."""
+
+    def test_cmd_help_displays_help(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Help command shows help text."""
+        result = cmd_help("", mock_conversation, mock_session_manager, mock_renderer)
+        assert result is True
+
+
+class TestExitCommand:
+    """Tests for exit command."""
+
+    def test_cmd_exit_returns_false(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Exit command returns False to signal session end."""
+        result = cmd_exit("", mock_conversation, mock_session_manager, mock_renderer)
+        assert result is False
+
+
 class TestModelCommand:
-    """Story 6.2: Tests for /model command."""
+    """Tests for /model command."""
 
     def test_model_command_registered(self):
         """Model command is registered in COMMANDS."""
@@ -266,15 +413,14 @@ class TestRegisterSkills:
         skills = {"myskill": Skill(name="myskill", description="Do something useful.", instructions="Do something useful.")}
 
         original_keys = set(COMMANDS.keys())
+        registered = []
         try:
             registered = register_skills(skills, mock_agent)
             assert "myskill" in COMMANDS
             assert "myskill" in registered
         finally:
-            # Clean up dynamic commands after test
-            if 'registered' in locals():
-                for name in registered:
-                    COMMANDS.pop(name, None)
+            for name in registered:
+                COMMANDS.pop(name, None)
 
     def test_skill_command_runs_agent(self, mock_conversation, mock_session_manager, mock_renderer):
         """Invoking a skill command calls agent.run with skill content."""

@@ -1,5 +1,7 @@
-"""Slash command system for CLI."""
+"""Command system for CLI supporting multiple prefixes (/, @, #, !)."""
 
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 from urllib.error import URLError
@@ -24,6 +26,27 @@ if TYPE_CHECKING:
     from coding_agent.core.agent import Agent
 
 
+class CommandPrefix(Enum):
+    """Supported command prefixes."""
+    SLASH = "/"
+    AT = "@"
+    HASH = "#"
+    BANG = "!"
+
+
+@dataclass
+class CommandHandler:
+    """Represents a command with handler."""
+    name: str
+    handler: Callable
+    help_text: str
+    arg_required: bool = False
+    prefix: CommandPrefix = CommandPrefix.SLASH
+
+
+SlashCommand = CommandHandler
+
+
 _workflow_manager: WorkflowManager | None = None
 
 
@@ -38,27 +61,44 @@ def get_workflow_manager() -> WorkflowManager | None:
     return _workflow_manager
 
 
-class SlashCommand:
-    """Represents a slash command."""
-
-    def __init__(self, name: str, handler: Callable, help_text: str, arg_required: bool = False):
-        self.name = name
-        self.handler = handler
-        self.help_text = help_text
-        self.arg_required = arg_required
-
-
 def cmd_help(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Show help message."""
     table = Table(title="Available Commands", show_header=True, header_style="bold cyan")
     table.add_column("Command", style="cyan")
     table.add_column("Description")
 
-    for cmd in COMMANDS.values():
+    for cmd in SLASH_COMMANDS.values():
         name = f"/{cmd.name}"
         if cmd.arg_required:
             name += " <arg>"
         table.add_row(name, cmd.help_text)
+
+    if AT_COMMANDS:
+        table.add_row("", "")
+        table.add_row("[bold cyan]@ Commands[/bold cyan]", "[dim]Quick access to workflows[/dim]")
+        for cmd in AT_COMMANDS.values():
+            name = f"@{cmd.name}"
+            if cmd.arg_required:
+                name += " <arg>"
+            table.add_row(name, cmd.help_text)
+
+    if HASH_COMMANDS:
+        table.add_row("", "")
+        table.add_row("[bold cyan]# Commands[/bold cyan]", "[dim]Lookup symbols/files[/dim]")
+        for cmd in HASH_COMMANDS.values():
+            name = f"#{cmd.name}"
+            if cmd.arg_required:
+                name += " <arg>"
+            table.add_row(name, cmd.help_text)
+
+    if BANG_COMMANDS:
+        table.add_row("", "")
+        table.add_row("[bold cyan]! Commands[/bold cyan]", "[dim]Quick shell commands[/dim]")
+        for cmd in BANG_COMMANDS.values():
+            name = f"!{cmd.name}"
+            if cmd.arg_required:
+                name += " <arg>"
+            table.add_row(name, cmd.help_text)
 
     renderer.console.print(table)
     return True
@@ -809,28 +849,168 @@ def cmd_workflow(
     return True
 
 
-COMMANDS: dict[str, SlashCommand] = {
-    "help": SlashCommand("help", cmd_help, "Show help message", False),
-    "clear": SlashCommand("clear", cmd_clear, "Clear conversation history", False),
-    "compact": SlashCommand("compact", cmd_compact, "Manually trigger conversation truncation", False),
-    "sessions": SlashCommand("sessions", cmd_sessions, "List saved sessions", False),
-    "model": SlashCommand("model", cmd_model, "Switch to a different model", True),
-    "model-info": SlashCommand("model-info", cmd_model_info, "Show current model capabilities", False),
-    "init": SlashCommand("init", cmd_init, "Create AGENTS.md template in project root", False),
-    "skills": SlashCommand("skills", cmd_skills, "Configure skills (toggle enabled/disabled)", False),
-    "exit": SlashCommand("exit", cmd_exit, "Exit the session", False),
-    "todo": SlashCommand("todo", cmd_todo, "Show/manage todo list", False),
-    "plan": SlashCommand("plan", cmd_plan, "Create implementation plan", True),
-    "approve": SlashCommand("approve", cmd_approve, "Approve implementation plan", False),
-    "reject": SlashCommand("reject", cmd_reject, "Reject implementation plan", False),
-    "auto-allow": SlashCommand("auto-allow", cmd_auto_allow, "Toggle auto-allow mode for approvals", False),
-    "workflow": SlashCommand("workflow", cmd_workflow, "List or run a YAML workflow", False),
-    "temp": SlashCommand("temp", cmd_temp, "Set temperature (0.0-2.0)", True),
-    "top-p": SlashCommand("top-p", cmd_top_p, "Set top_p (0.0-1.0)", True),
-    "api-key": SlashCommand("api-key", cmd_api_key, "Set API key at runtime", True),
-    "config": SlashCommand("config", cmd_config, "Show current runtime config", False),
-    "config-set": SlashCommand("config-set", cmd_config_set, "Set runtime config option", True),
+COMMANDS: dict[str, CommandHandler] = {
+    "help": CommandHandler("help", cmd_help, "Show help message", False),
+    "clear": CommandHandler("clear", cmd_clear, "Clear conversation history", False),
+    "compact": CommandHandler("compact", cmd_compact, "Manually trigger conversation truncation", False),
+    "sessions": CommandHandler("sessions", cmd_sessions, "List saved sessions", False),
+    "model": CommandHandler("model", cmd_model, "Switch to a different model", True),
+    "model-info": CommandHandler("model-info", cmd_model_info, "Show current model capabilities", False),
+    "init": CommandHandler("init", cmd_init, "Create AGENTS.md template in project root", False),
+    "skills": CommandHandler("skills", cmd_skills, "Configure skills (toggle enabled/disabled)", False),
+    "exit": CommandHandler("exit", cmd_exit, "Exit the session", False),
+    "todo": CommandHandler("todo", cmd_todo, "Show/manage todo list", False),
+    "plan": CommandHandler("plan", cmd_plan, "Create implementation plan", True),
+    "approve": CommandHandler("approve", cmd_approve, "Approve implementation plan", False),
+    "reject": CommandHandler("reject", cmd_reject, "Reject implementation plan", False),
+    "auto-allow": CommandHandler("auto-allow", cmd_auto_allow, "Toggle auto-allow mode for approvals", False),
+    "workflow": CommandHandler("workflow", cmd_workflow, "List or run a YAML workflow", False),
+    "temp": CommandHandler("temp", cmd_temp, "Set temperature (0.0-2.0)", True),
+    "top-p": CommandHandler("top-p", cmd_top_p, "Set top_p (0.0-1.0)", True),
+    "api-key": CommandHandler("api-key", cmd_api_key, "Set API key at runtime", True),
+    "config": CommandHandler("config", cmd_config, "Show current runtime config", False),
+    "config-set": CommandHandler("config-set", cmd_config_set, "Set runtime config option", True),
 }
+
+SLASH_COMMANDS = COMMANDS
+AT_COMMANDS: dict[str, CommandHandler] = {}
+HASH_COMMANDS: dict[str, CommandHandler] = {}
+BANG_COMMANDS: dict[str, CommandHandler] = {}
+
+
+def cmd_at_default(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run the default workflow."""
+    if not args:
+        args = ""
+    renderer.print_info("Running default workflow...")
+    if agent:
+        agent.run(f"Run the default workflow. User input: {args}")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+def cmd_at_code(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run the quick-dev workflow for coding tasks."""
+    if not args:
+        renderer.print_error("Usage: @code <task description>")
+        return True
+    renderer.print_info("Running quick-dev workflow...")
+    if agent:
+        agent.run(f"Run the quick-dev workflow for: {args}")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+def cmd_at_review(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run the code-review workflow."""
+    if not args:
+        args = "."
+    renderer.print_info("Running code-review workflow...")
+    if agent:
+        agent.run(f"Run the code-review workflow on: {args}")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+def cmd_at_analyze(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run the analyze-codebase workflow."""
+    if not args:
+        args = "."
+    renderer.print_info("Running analyze-codebase workflow...")
+    if agent:
+        agent.run(f"Run the analyze-codebase workflow on: {args}")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+AT_COMMANDS["default"] = CommandHandler("default", cmd_at_default, "Run the default workflow", False, CommandPrefix.AT)
+AT_COMMANDS["code"] = CommandHandler("code", cmd_at_code, "Run quick-dev workflow for coding tasks", True, CommandPrefix.AT)
+AT_COMMANDS["review"] = CommandHandler("review", cmd_at_review, "Run code-review workflow", False, CommandPrefix.AT)
+AT_COMMANDS["analyze"] = CommandHandler("analyze", cmd_at_analyze, "Run analyze-codebase workflow", False, CommandPrefix.AT)
+
+
+def cmd_hash_symbol(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Search for a symbol in the codebase."""
+    if not args:
+        renderer.print_error("Usage: #symbol <name>")
+        return True
+    renderer.print_info(f"Searching for symbol: {args}")
+    if agent:
+        agent.run(f"Find and show information about the symbol '{args}' in the codebase. Search for function definitions, class definitions, and usages.")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+def cmd_hash_file(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Search for a file in the codebase."""
+    if not args:
+        renderer.print_error("Usage: #file <filename>")
+        return True
+    renderer.print_info(f"Searching for file: {args}")
+    if agent:
+        agent.run(f"Find and show information about the file '{args}' in the codebase. Show its location, contents summary, and any related files.")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+HASH_COMMANDS["symbol"] = CommandHandler("symbol", cmd_hash_symbol, "Search for a symbol in codebase", True, CommandPrefix.HASH)
+HASH_COMMANDS["file"] = CommandHandler("file", cmd_hash_file, "Search for a file in codebase", True, CommandPrefix.HASH)
+
+
+def cmd_bang_run(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run a shell command."""
+    if not args:
+        renderer.print_error("Usage: !run <command>")
+        return True
+    renderer.print_info(f"Running command: {args}")
+    if agent:
+        agent.run(f"Execute the following shell command and report the results: {args}")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+def cmd_bang_test(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run tests."""
+    test_args = args.strip() or ""
+    renderer.print_info(f"Running tests: {test_args or 'all tests'}")
+    if agent:
+        agent.run(f"Run tests. If '{test_args}' is provided, run those specific tests, otherwise run all tests. Report the results including any failures.")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+def cmd_bang_lint(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run linter."""
+    renderer.print_info("Running linter...")
+    if agent:
+        agent.run("Run the linter and report any issues found.")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+def cmd_bang_tidy(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Run code formatter/tidy."""
+    renderer.print_info("Running code formatter...")
+    if agent:
+        agent.run("Run the code formatter (e.g., black, ruff, gofmt) and report any changes made.")
+    else:
+        renderer.print_error("No agent available.")
+    return True
+
+
+BANG_COMMANDS["run"] = CommandHandler("run", cmd_bang_run, "Run a shell command", True, CommandPrefix.BANG)
+BANG_COMMANDS["test"] = CommandHandler("test", cmd_bang_test, "Run tests", False, CommandPrefix.BANG)
+BANG_COMMANDS["lint"] = CommandHandler("lint", cmd_bang_lint, "Run linter", False, CommandPrefix.BANG)
+BANG_COMMANDS["tidy"] = CommandHandler("tidy", cmd_bang_tidy, "Run code formatter", False, CommandPrefix.BANG)
 
 
 def register_skills(skills: dict[str, Skill], agent: "Agent") -> list[str]:
@@ -875,7 +1055,7 @@ def register_skills(skills: dict[str, Skill], agent: "Agent") -> list[str]:
                 return True
             return handler
 
-        COMMANDS[name] = SlashCommand(
+        SLASH_COMMANDS[name] = CommandHandler(
             name=name,
             handler=_make_handler(content),
             help_text=f"[skill] {description or content[:60].splitlines()[0] if content else name}",
@@ -886,20 +1066,22 @@ def register_skills(skills: dict[str, Skill], agent: "Agent") -> list[str]:
     return registered
 
 
-class SlashCommandCompleter(Completer):
-    """Autocomplete for slash commands in prompt-toolkit."""
+class CommandCompleter(Completer):
+    """Autocomplete for commands in prompt-toolkit (supports /, @, #, ! prefixes)."""
 
     def get_completions(self, document, complete_event):
-        """Yield completions when input starts with '/'."""
+        """Yield completions when input starts with a supported prefix."""
         text = document.text_before_cursor
 
-        if not text.startswith("/"):
+        prefix = _get_prefix(text)
+        if prefix is None:
             return
 
-        # Extract the partial command name (strip leading '/')
-        partial = text[1:]
+        registry = _get_registry(prefix)
+        prefix_char = prefix.value
+        partial = text[len(prefix_char):]
 
-        for name, cmd in COMMANDS.items():
+        for name, cmd in registry.items():
             if name.startswith(partial):
                 yield Completion(
                     name,
@@ -908,26 +1090,64 @@ class SlashCommandCompleter(Completer):
                 )
 
 
+SlashCommandCompleter = CommandCompleter
+
+
+def is_command(text: str) -> bool:
+    """Check if input is a command (starts with any supported prefix)."""
+    text = text.strip()
+    return text.startswith("/") or text.startswith("@") or text.startswith("#") or text.startswith("!")
+
+
 def is_slash_command(text: str) -> bool:
-    """Check if input is a slash command."""
+    """Check if input is a slash command (backward compatibility)."""
     return text.strip().startswith("/")
 
 
-def parse_command(text: str) -> tuple[str, str]:
-    """Parse command name and arguments from input.
+def _get_prefix(text: str) -> CommandPrefix | None:
+    """Get the command prefix from input."""
+    text = text.strip()
+    if text.startswith("/"):
+        return CommandPrefix.SLASH
+    elif text.startswith("@"):
+        return CommandPrefix.AT
+    elif text.startswith("#"):
+        return CommandPrefix.HASH
+    elif text.startswith("!"):
+        return CommandPrefix.BANG
+    return None
+
+
+def _get_registry(prefix: CommandPrefix) -> dict[str, CommandHandler]:
+    """Get the command registry for a given prefix."""
+    if prefix == CommandPrefix.SLASH:
+        return SLASH_COMMANDS
+    elif prefix == CommandPrefix.AT:
+        return AT_COMMANDS
+    elif prefix == CommandPrefix.HASH:
+        return HASH_COMMANDS
+    elif prefix == CommandPrefix.BANG:
+        return BANG_COMMANDS
+    return {}
+
+
+def parse_command(text: str) -> tuple[CommandPrefix | None, str, str]:
+    """Parse prefix, command name and arguments from input.
 
     Returns:
-        Tuple of (command_name, arguments)
+        Tuple of (prefix, command_name, arguments)
     """
     text = text.strip()
-    if not text.startswith("/"):
-        return "", ""
+    prefix = _get_prefix(text)
+    if prefix is None:
+        return None, "", ""
 
-    parts = text[1:].split(maxsplit=1)
+    prefix_char = prefix.value
+    parts = text[len(prefix_char):].split(maxsplit=1)
     command = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
 
-    return command, args
+    return prefix, command, args
 
 
 def execute_command(
@@ -938,7 +1158,7 @@ def execute_command(
     llm_client: LLMClient | None = None,
     agent: "Agent | None" = None,
 ) -> bool | None:
-    """Execute a slash command if the input is one.
+    """Execute a command if the input starts with a supported prefix.
 
     Args:
         text: User input
@@ -951,21 +1171,22 @@ def execute_command(
     Returns:
         True if command executed and session should continue
         False if command executed and session should exit
-        None if input is not a slash command
+        None if input is not a command
     """
-    if not is_slash_command(text):
+    prefix, command_name, args = parse_command(text)
+    if prefix is None:
         return None
 
-    command_name, args = parse_command(text)
+    registry = _get_registry(prefix)
 
-    if command_name not in COMMANDS:
-        renderer.print_error(f"Unknown command: /{command_name}. Type /help for available commands.")
+    if command_name not in registry:
+        renderer.print_error(f"Unknown command: {prefix.value}{command_name}. Type /help for available commands.")
         return True
 
-    cmd = COMMANDS[command_name]
+    cmd = registry[command_name]
 
     if cmd.arg_required and not args:
-        renderer.print_error(f"Command /{command_name} requires an argument.")
+        renderer.print_error(f"Command {prefix.value}{command_name} requires an argument.")
         return True
 
     return cmd.handler(args, conversation, session_manager, renderer, llm_client, agent)
