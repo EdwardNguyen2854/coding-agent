@@ -11,7 +11,7 @@ import litellm
 from prompt_toolkit.completion import Completer, Completion
 from rich.table import Table
 
-from coding_agent.config import DEFAULT_CONFIG_FILE, DEFAULT_DOCS_DIR, SkillSetting, load_config
+from coding_agent.config import DEFAULT_CONFIG_FILE, DEFAULT_DOCS_DIR, SkillSetting, get_runtime_config, load_config, set_runtime_config
 from coding_agent.core.conversation import ConversationManager
 from coding_agent.core.llm import LLMClient, detect_model_capabilities
 from coding_agent.config.project_instructions import find_git_root
@@ -314,6 +314,13 @@ def cmd_model(args: str, conversation: ConversationManager, session_manager: Ses
     renderer.print_info(f"Detected: temperature={caps.temperature_supported}, top_p={caps.top_p_supported}")
     if not caps.temperature_supported or not caps.top_p_supported:
         renderer.print_info("Using safe defaults (temp=0.0, top_p=1.0)")
+
+    # Persist to session
+    set_runtime_config(model=model_name)
+    if agent and agent.session_data:
+        agent.session_data["runtime_config"] = get_runtime_config()
+        session_manager.save(agent.session_data)
+
     return True
 
 
@@ -344,6 +351,13 @@ def cmd_temp(args: str, conversation: ConversationManager, session_manager: Sess
 
     llm_client.temperature = value
     renderer.print_success(f"Temperature set to {value}")
+
+    # Persist to session
+    set_runtime_config(temperature=value)
+    if agent and agent.session_data:
+        agent.session_data["runtime_config"] = get_runtime_config()
+        session_manager.save(agent.session_data)
+
     return True
 
 
@@ -374,6 +388,13 @@ def cmd_top_p(args: str, conversation: ConversationManager, session_manager: Ses
 
     llm_client.top_p = value
     renderer.print_success(f"top_p set to {value}")
+
+    # Persist to session
+    set_runtime_config(top_p=value)
+    if agent and agent.session_data:
+        agent.session_data["runtime_config"] = get_runtime_config()
+        session_manager.save(agent.session_data)
+
     return True
 
 
@@ -392,6 +413,112 @@ def cmd_model_info(args: str, conversation: ConversationManager, session_manager
         renderer.print_info("Capabilities: Not yet detected (run /model to detect)")
     renderer.print_info(f"Current temperature: {llm_client.temperature}")
     renderer.print_info(f"Current top_p: {llm_client.top_p}")
+    return True
+
+
+def cmd_api_key(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Set or update API key at runtime."""
+    if llm_client is None:
+        renderer.print_error("API key control is not available in this context.")
+        return True
+
+    api_key = args.strip()
+    if not api_key:
+        renderer.print_error("Command /api-key requires an argument (the API key).")
+        return True
+
+    llm_client.api_key = api_key
+    renderer.print_success("API key updated")
+
+    # Persist to session
+    set_runtime_config(api_key=api_key)
+    if agent and agent.session_data:
+        agent.session_data["runtime_config"] = get_runtime_config()
+        session_manager.save(agent.session_data)
+
+    return True
+
+
+def cmd_config(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Show current runtime configuration."""
+    if llm_client is None:
+        renderer.print_error("Config is not available in this context.")
+        return True
+
+    runtime = get_runtime_config()
+    renderer.print_info("Current Runtime Configuration:")
+    renderer.print_info(f"  Model: {llm_client.model}")
+    if runtime.get("api_key"):
+        renderer.print_info(f"  API Key: ***")
+    else:
+        renderer.print_info(f"  API Key: {llm_client.api_key if llm_client.api_key else 'None'}")
+    renderer.print_info(f"  API Base: {llm_client.api_base}")
+    renderer.print_info(f"  Temperature: {llm_client.temperature}")
+    renderer.print_info(f"  top_p: {llm_client.top_p}")
+    renderer.print_info(f"  Max Output Tokens: {llm_client.max_output_tokens}")
+
+    return True
+
+
+def cmd_config_set(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Set a runtime config option."""
+    if llm_client is None:
+        renderer.print_error("Config is not available in this context.")
+        return True
+
+    parts = args.strip().split(maxsplit=1)
+    if len(parts) < 2:
+        renderer.print_error("Usage: /config set <key> <value>")
+        renderer.print_info("Valid keys: model, api_key, temperature, top_p, api_base, max_output_tokens")
+        return True
+
+    key, value = parts[0], parts[1]
+    valid_keys = {"model", "api_key", "temperature", "top_p", "api_base", "max_output_tokens"}
+    if key not in valid_keys:
+        renderer.print_error(f"Invalid key: {key}. Valid keys: {', '.join(valid_keys)}")
+        return True
+
+    try:
+        if key == "temperature":
+            val = float(value)
+            if val < 0.0 or val > 2.0:
+                renderer.print_error("Temperature must be between 0.0 and 2.0.")
+                return True
+            llm_client.temperature = val
+        elif key == "top_p":
+            val = float(value)
+            if val < 0.0 or val > 1.0:
+                renderer.print_error("top_p must be between 0.0 and 1.0.")
+                return True
+            llm_client.top_p = val
+        elif key == "max_output_tokens":
+            val = int(value)
+            if val <= 0:
+                renderer.print_error("max_output_tokens must be a positive integer.")
+                return True
+            llm_client.max_output_tokens = val
+        elif key == "api_key":
+            llm_client.api_key = value
+        elif key == "model":
+            llm_client.model = value
+        elif key == "api_base":
+            if not value.startswith(("http://", "https://")):
+                renderer.print_error("api_base must start with http:// or https://")
+                return True
+            llm_client.api_base = value.rstrip("/")
+        else:
+            return True
+    except ValueError:
+        renderer.print_error(f"Invalid value for {key}: {value}")
+        return True
+
+    # Persist to session
+    set_runtime_config(**{key: value})
+    if agent and agent.session_data:
+        agent.session_data["runtime_config"] = get_runtime_config()
+        session_manager.save(agent.session_data)
+
+    renderer.print_success(f"Config {key} set to {value}")
     return True
 
 
@@ -700,6 +827,9 @@ COMMANDS: dict[str, SlashCommand] = {
     "workflow": SlashCommand("workflow", cmd_workflow, "List or run a YAML workflow", False),
     "temp": SlashCommand("temp", cmd_temp, "Set temperature (0.0-2.0)", True),
     "top-p": SlashCommand("top-p", cmd_top_p, "Set top_p (0.0-1.0)", True),
+    "api-key": SlashCommand("api-key", cmd_api_key, "Set API key at runtime", True),
+    "config": SlashCommand("config", cmd_config, "Show current runtime config", False),
+    "config-set": SlashCommand("config-set", cmd_config_set, "Set runtime config option", True),
 }
 
 

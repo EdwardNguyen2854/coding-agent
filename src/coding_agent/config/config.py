@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, mo
 DEFAULT_CONFIG_DIR = Path.home() / ".coding-agent"
 DEFAULT_CONFIG_FILE = DEFAULT_CONFIG_DIR / "config.yaml"
 
+_runtime_config: dict = {}
+
 
 @dataclass
 class ModelCapabilities:
@@ -18,6 +20,17 @@ class ModelCapabilities:
 
 
 _model_capabilities_cache: dict[str, ModelCapabilities] = {}
+
+
+@dataclass
+class RuntimeConfig:
+    """Runtime configuration overrides for the current session."""
+    model: str | None = None
+    api_key: str | None = None
+    temperature: float | None = None
+    top_p: float | None = None
+    api_base: str | None = None
+    max_output_tokens: int | None = None
 
 
 def get_model_capabilities(model: str) -> ModelCapabilities | None:
@@ -306,3 +319,34 @@ def load_model_capabilities_cache() -> None:
             )
     except (json.JSONDecodeError, OSError):
         pass
+
+
+def get_runtime_config() -> dict:
+    """Get the current runtime config overrides.
+
+    Returns:
+        Dict with runtime override values (None for unset keys).
+    """
+    return _runtime_config.copy()
+
+
+def set_runtime_config(**kwargs: str | float | int | None) -> dict:
+    """Set runtime config overrides.
+
+    Args:
+        **kwargs: Configuration keys to override (model, api_key, temperature, top_p, api_base, max_output_tokens)
+
+    Returns:
+        Updated runtime config dict.
+    """
+    valid_keys = {"model", "api_key", "temperature", "top_p", "api_base", "max_output_tokens"}
+    for key in kwargs:
+        if key not in valid_keys:
+            raise ValueError(f"Invalid runtime config key: {key}. Valid keys: {valid_keys}")
+    _runtime_config.update(kwargs)
+    return get_runtime_config()
+
+
+def clear_runtime_config() -> None:
+    """Clear all runtime config overrides."""
+    _runtime_config.clear()

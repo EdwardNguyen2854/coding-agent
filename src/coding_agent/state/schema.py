@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     token_count INTEGER DEFAULT 0,
     is_compacted BOOLEAN DEFAULT FALSE,
     original_token_count INTEGER,
-    max_tokens_before_compact INTEGER DEFAULT 128000
+    max_tokens_before_compact INTEGER DEFAULT 128000,
+    runtime_config TEXT
 );
 """
 

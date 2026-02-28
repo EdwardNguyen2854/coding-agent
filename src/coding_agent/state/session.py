@@ -219,6 +219,7 @@ class SessionManager:
                 "model": model,
                 "token_count": token_count,
                 "_seq": self._seq,
+                "runtime_config": {},
             }
             self._seq += 1
             self.save(session)
@@ -228,8 +229,8 @@ class SessionManager:
         with self._db.transaction():
             self._db.execute(
                 """INSERT INTO sessions
-                   (id, title, model, created_at, updated_at, token_count, is_compacted)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (id, title, model, created_at, updated_at, token_count, is_compacted, runtime_config)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     self._generate_title(first_message),
@@ -238,6 +239,7 @@ class SessionManager:
                     now,
                     token_count,
                     False,
+                    json.dumps({}),
                 ),
             )
 
@@ -283,16 +285,18 @@ class SessionManager:
             return
 
         token_count = self._estimate_tokens(session.get("messages", []))
+        runtime_config_json = json.dumps(session.get("runtime_config", {}))
 
         with self._db.transaction():
             self._db.execute(
                 """UPDATE sessions
-                   SET title = ?, updated_at = ?, token_count = ?
+                   SET title = ?, updated_at = ?, token_count = ?, runtime_config = ?
                    WHERE id = ?""",
                 (
                     session.get("title", "Untitled"),
                     now,
                     token_count,
+                    runtime_config_json,
                     session_id,
                 ),
             )
@@ -364,6 +368,13 @@ class SessionManager:
 
         sub_agents = self.get_sub_agents(session_id)
 
+        runtime_config = {}
+        if row.get("runtime_config"):
+            try:
+                runtime_config = json.loads(row["runtime_config"])
+            except (json.JSONDecodeError, ValueError):
+                pass
+
         return {
             "id": row["id"],
             "title": row["title"],
@@ -376,6 +387,7 @@ class SessionManager:
             "max_tokens_before_compact": row["max_tokens_before_compact"],
             "messages": messages,
             "sub_agents": sub_agents,
+            "runtime_config": runtime_config,
         }
 
     def _load_json(self, session_id: str) -> dict[str, Any] | None:
