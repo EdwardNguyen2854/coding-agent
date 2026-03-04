@@ -3,9 +3,11 @@
 import json
 import logging
 import os
+import time
 from typing import Any
 
 from coding_agent.ui.interrupt import is_interrupted
+from coding_agent.ui.output import ToolOutputFormatter
 
 _log = logging.getLogger(__name__)
 from coding_agent.core.permissions import PermissionSystem
@@ -38,6 +40,9 @@ class Agent:
         self.permissions = PermissionSystem(renderer)
         self.max_context_tokens = config.max_context_tokens if config else 128000
         self.workspace_root = workspace_root or os.getcwd()
+        
+        output_config = config.output if config else None
+        self.output_formatter = ToolOutputFormatter(output_config)
 
     @staticmethod
     def _has_tool_messages(messages: list[dict]) -> bool:
@@ -225,19 +230,48 @@ class Agent:
             self.renderer.print_info("  ✗ denied")
             return
 
+        start_time = time.perf_counter()
         with self.renderer.status_spinner(f"[dim] Running {tool_name}...[/dim]"):
             result = execute_tool(tool_name, arguments)
+        timing_ms = (time.perf_counter() - start_time) * 1000
 
         if result.is_error:
-            self.renderer.print_error(f"  error: {result.message}")
             tool_result_content = json.dumps({"error": result.message, "output": truncate_output(result.output)})
             self.consecutive_failures += 1
         else:
-            self.renderer.print_success("  ✓ done")
             tool_result_content = truncate_output(result.output)
             if result.message:
                 tool_result_content = json.dumps({"message": result.message, "output": truncate_output(result.output)})
             self.consecutive_failures = 0
+
+        formatted = self.output_formatter.format(
+            tool_name,
+            tool_result_content,
+            is_error=result.is_error,
+            timing_ms=timing_ms,
+        )
+
+        status_indicator = self.output_formatter.get_status_indicator(formatted.status)
+        
+        self.renderer.console.print()
+        from coding_agent.ui.output.render import render_tool_header, render_tool_output
+        render_tool_header(
+            self.renderer.console,
+            tool_name,
+            formatted.status,
+            status_indicator,
+            timing_ms=timing_ms,
+            show_timing=self.output_formatter.config.show_timing,
+            timing_format=self.output_formatter.config.timing_format,
+            status_indicators=self.output_formatter.config.status_indicators,
+        )
+        
+        render_tool_output(
+            self.renderer.console,
+            formatted,
+            self.output_formatter.config,
+            tool_name,
+        )
         self.renderer.console.print()
 
         self.conversation.add_message("tool", tool_result_content, tool_call_id=tool_id)

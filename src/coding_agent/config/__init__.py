@@ -8,6 +8,7 @@ from coding_agent.config.config import (
     DEFAULT_CONFIG_FILE,
     DEFAULT_DOCS_DIR,
     OLLAMA_DEFAULT_API_BASE,
+    OutputConfig,
     SkillSetting,
     SkillsConfig,
     DEFAULT_SKILLS,

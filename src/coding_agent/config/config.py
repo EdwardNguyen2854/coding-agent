@@ -103,6 +103,21 @@ class ConfigError(Exception):
     """Raised when configuration is invalid or missing."""
 
 
+class OutputConfig(BaseModel):
+    """Tool output display configuration."""
+    
+    model_config = ConfigDict(extra="forbid")
+    
+    enabled: bool = True
+    truncate: bool = True
+    max_lines: int = 50
+    max_chars: int = 2000
+    show_timing: bool = True
+    timing_format: str = "ms"
+    syntax_highlight: bool = True
+    status_indicators: bool = True
+
+
 class AgentConfig(BaseModel):
     """Agent configuration with validation."""
 
@@ -139,6 +154,9 @@ class AgentConfig(BaseModel):
 
     # Auto-allow mode - automatically approve tool executions
     auto_allow: bool = False
+
+    # Tool output configuration
+    output: OutputConfig = OutputConfig()
 
     @field_validator("api_base")
     @classmethod
@@ -223,6 +241,8 @@ def apply_cli_overrides(
     temperature: float | None = None,
     max_output_tokens: int | None = None,
     top_p: float | None = None,
+    output_enabled: bool | None = None,
+    output_max_lines: int | None = None,
 ) -> AgentConfig:
     """Apply CLI flag overrides to config. Returns a new AgentConfig instance.
 
@@ -239,6 +259,14 @@ def apply_cli_overrides(
         overrides["max_output_tokens"] = max_output_tokens
     if top_p is not None:
         overrides["top_p"] = top_p
+    if output_enabled is not None or output_max_lines is not None:
+        output_overrides = {}
+        if output_enabled is not None:
+            output_overrides["enabled"] = output_enabled
+        if output_max_lines is not None:
+            output_overrides["max_lines"] = output_max_lines
+        current_output = config.output.model_dump()
+        overrides["output"] = current_output | output_overrides
 
     if not overrides:
         return config
