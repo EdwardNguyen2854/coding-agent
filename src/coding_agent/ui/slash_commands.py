@@ -21,6 +21,7 @@ from coding_agent.ui.renderer import Renderer
 from coding_agent.state.session import SessionManager
 from coding_agent.config.skills import Skill
 from coding_agent.state.workflow_impl import WorkflowManager, WorkflowState, Plan
+from coding_agent.ui.output.filters import OutputFilterManager, get_filter_manager, parse_filter_args
 
 if TYPE_CHECKING:
     from coding_agent.core.agent import Agent
@@ -870,6 +871,9 @@ COMMANDS: dict[str, CommandHandler] = {
     "api-key": CommandHandler("api-key", cmd_api_key, "Set API key at runtime", True),
     "config": CommandHandler("config", cmd_config, "Show current runtime config", False),
     "config-set": CommandHandler("config-set", cmd_config_set, "Set runtime config option", True),
+    "filter": CommandHandler("filter", cmd_filter, "Filter tool output (e.g., /filter tool:grep error)", False),
+    "expand": CommandHandler("expand", cmd_expand, "Expand truncated tool output", True),
+    "output": CommandHandler("output", cmd_output, "Show tool output history", False),
 }
 
 SLASH_COMMANDS = COMMANDS
@@ -1190,3 +1194,101 @@ def execute_command(
         return True
 
     return cmd.handler(args, conversation, session_manager, renderer, llm_client, agent)
+
+
+def cmd_filter(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Filter tool output by tool name, status, or pattern."""
+    filter_manager = get_filter_manager()
+    
+    if not args or args.strip() == "clear":
+        filter_manager.clear_filters()
+        renderer.print_info("Output filters cleared.")
+        return True
+    
+    if args.strip() == "show":
+        filters = filter_manager.filters
+        if not filters:
+            renderer.print_info("No active filters.")
+        else:
+            renderer.print_info("Active filters:")
+            for i, f in enumerate(filters):
+                parts = []
+                if f.tool_names:
+                    parts.append(f"tools: {', '.join(f.tool_names)}")
+                if f.statuses:
+                    parts.append(f"status: {', '.join(s.value for s in f.statuses)}")
+                if f.patterns:
+                    parts.append(f"patterns: {', '.join(f.patterns)}")
+                renderer.print_info(f"  {i + 1}. {' | '.join(parts)}")
+        return True
+    
+    filter_obj = parse_filter_args(args)
+    filter_manager.add_filter(filter_obj)
+    
+    parts = []
+    if filter_obj.tool_names:
+        parts.append(f"tools: {', '.join(filter_obj.tool_names)}")
+    if filter_obj.statuses:
+        parts.append(f"status: {', '.join(s.value for s in filter_obj.statuses)}")
+    if filter_obj.patterns:
+        parts.append(f"patterns: {', '.join(filter_obj.patterns)}")
+    
+    renderer.print_success(f"Filter added: {' | '.join(parts)}")
+    return True
+
+
+def cmd_expand(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Expand a truncated tool output."""
+    filter_manager = get_filter_manager()
+    
+    if not args:
+        renderer.print_error("Usage: /expand <output_id>")
+        return True
+    
+    full_output = filter_manager.get_full_output(args)
+    if full_output is None:
+        renderer.print_error(f"Output not found: {args}")
+        return True
+    
+    from rich.syntax import Syntax
+    from rich.panel import Panel
+    renderer.console.print(Panel(Syntax(full_output, "text", theme="ansi_dark"), title=f"Full Output: {args}"))
+    return True
+
+
+def cmd_output(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Show tool output history."""
+    filter_manager = get_filter_manager()
+    history = filter_manager.get_history()
+    
+    if not history:
+        renderer.print_info("No tool outputs in history.")
+        return True
+    
+    limit = 10
+    if args:
+        try:
+            limit = int(args)
+        except ValueError:
+            pass
+    
+    from rich.table import Table
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("ID", style="dim")
+    table.add_column("Tool")
+    table.add_column("Status")
+    table.add_column("Preview")
+    
+    for entry in history[-limit:]:
+        preview = entry["output"][:50].replace("\n", " ")
+        if len(entry["output"]) > 50:
+            preview += "..."
+        table.add_row(
+            entry["id"],
+            entry["tool_name"],
+            entry["status"].value,
+            preview,
+        )
+    
+    renderer.console.print(table)
+    return True
