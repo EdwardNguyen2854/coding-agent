@@ -1,7 +1,7 @@
 # Coding Agent
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](#)
-[![Version](https://img.shields.io/badge/version-0.9.0-2ea44f.svg)](#)
+[![Version](https://img.shields.io/badge/version-0.11.3-2ea44f.svg)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 `coding-agent` is a self-hosted, model-agnostic AI coding assistant for terminal workflows.
@@ -74,7 +74,7 @@ Slash commands include:
 
 - Core: `/help`, `/clear`, `/compact`, `/sessions`, `/model`, `/exit`
 - Project setup: `/init`, `/skills`
-- Workflow: `/todo`, `/plan`, `/approve`, `/reject`
+- Workflow: `/todo`, `/plan`, `/approve`, `/reject`, `/checkpoint`
 - Permissions: `/auto-allow`
 
 ### 4) Session persistence

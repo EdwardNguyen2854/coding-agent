@@ -39,20 +39,53 @@ coding-agent --ollama qwen2.5-coder:7b
 |---|---|
 | `/help` | Show available slash commands |
 | `/clear` | Clear current conversation |
-| `/compact` | Trigger conversation truncation |
+| `/compact [session-id]` | Trigger conversation truncation (optionally for specific session) |
 | `/sessions` | List saved sessions |
 | `/model <name>` | Switch model in-session |
+| `/model-info` | Show current model capabilities |
+| `/temp [value]` | Set or show temperature (0.0-2.0) |
+| `/top-p [value]` | Set or show top_p (0.0-1.0) |
+| `/api-key <key>` | Set API key at runtime |
+| `/config` | Show current runtime configuration |
+| `/config-set <key> <value>` | Set a runtime config option |
 | `/init` | Create an `AGENTS.md` template |
 | `/skills` | Open skill configuration flow |
 | `/todo` | Show or manage todo list |
+| `/todo clear` | Clear completed tasks |
+| `/todo next` | Show next pending task |
+| `/todo done:<task>` | Mark a task as completed |
 | `/plan <prompt>` | Ask agent to draft an implementation plan |
 | `/approve` | Approve current plan and begin execution |
 | `/reject` | Reject current plan |
+| `/checkpoint` | Manage checkpoints (save, list, restore, delete, diff) |
 | `/auto-allow on/off` | Toggle tool approval bypass |
 | `/workflow list` | List available YAML workflows |
 | `/workflow run <name>` | Run a workflow by name |
 | `/workflow status` | Show incomplete workflows |
+| `/filter [args]` | Filter tool output (e.g., /filter tool:grep error) |
+| `/expand <id>` | Expand truncated tool output |
+| `/output` | Show tool output history |
 | `/exit` | Exit the session |
+
+## Checkpoint commands
+
+The `/checkpoint` command manages conversation checkpoints for saving and restoring state:
+
+| Subcommand | Description |
+|---|---|
+| `/checkpoint save [name]` | Save current state with optional name |
+| `/checkpoint list` | List all checkpoints |
+| `/checkpoint restore <id> [--merge]` | Restore a checkpoint (--merge to combine with current) |
+| `/checkpoint delete <id>` | Delete a checkpoint |
+| `/checkpoint diff <id>` | Show changes since checkpoint |
+
+Examples:
+```bash
+/checkpoint save "Before refactor"
+/checkpoint list
+/checkpoint restore abc123
+/checkpoint diff abc123
+```
 
 ## Quick access commands (@)
 
