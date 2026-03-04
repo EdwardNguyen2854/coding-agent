@@ -118,6 +118,28 @@ class OutputConfig(BaseModel):
     status_indicators: bool = True
 
 
+class AutoSaveConfig(BaseModel):
+    """Auto-save configuration for checkpoints."""
+    enabled: bool = True
+    interval: int = 10
+    interval_minutes: int = 5
+
+
+class CheckpointStorageConfig(BaseModel):
+    """Checkpoint storage configuration."""
+    location: str = "~/.coding-agent/checkpoints"
+    max_count: int = 50
+    max_age_days: int = 7
+
+
+class CheckpointConfig(BaseModel):
+    """Checkpoint system configuration."""
+    enabled: bool = True
+    auto_save: AutoSaveConfig = AutoSaveConfig()
+    storage: CheckpointStorageConfig = CheckpointStorageConfig()
+    compression: bool = True
+
+
 class AgentConfig(BaseModel):
     """Agent configuration with validation."""
 
@@ -157,6 +179,9 @@ class AgentConfig(BaseModel):
 
     # Tool output configuration
     output: OutputConfig = OutputConfig()
+
+    # Checkpoint configuration
+    checkpoint: CheckpointConfig = CheckpointConfig()
 
     @field_validator("api_base")
     @classmethod

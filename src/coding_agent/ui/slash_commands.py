@@ -22,6 +22,7 @@ from coding_agent.state.session import SessionManager
 from coding_agent.config.skills import Skill
 from coding_agent.state.workflow_impl import WorkflowManager, WorkflowState, Plan
 from coding_agent.ui.output.filters import OutputFilterManager, get_filter_manager, parse_filter_args
+from coding_agent.checkpoint import CheckpointManager, RestoreMode
 
 if TYPE_CHECKING:
     from coding_agent.core.agent import Agent
@@ -49,6 +50,7 @@ SlashCommand = CommandHandler
 
 
 _workflow_manager: WorkflowManager | None = None
+_checkpoint_manager: CheckpointManager | None = None
 
 
 def set_workflow_manager(wm: WorkflowManager) -> None:
@@ -60,6 +62,17 @@ def set_workflow_manager(wm: WorkflowManager) -> None:
 def get_workflow_manager() -> WorkflowManager | None:
     """Get the global workflow manager instance."""
     return _workflow_manager
+
+
+def set_checkpoint_manager(cm: CheckpointManager) -> None:
+    """Set the global checkpoint manager instance."""
+    global _checkpoint_manager
+    _checkpoint_manager = cm
+
+
+def get_checkpoint_manager() -> CheckpointManager | None:
+    """Get the global checkpoint manager instance."""
+    return _checkpoint_manager
 
 
 def cmd_help(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
@@ -741,6 +754,113 @@ def cmd_skills(
     return True
 
 
+def cmd_checkpoint(
+    args: str,
+    conversation: ConversationManager,
+    session_manager: SessionManager,
+    renderer: Renderer,
+    llm_client: LLMClient | None = None,
+    agent: "Agent | None" = None,
+) -> bool:
+    """Handle checkpoint commands: save, list, restore, delete."""
+    if _checkpoint_manager is None:
+        renderer.print_error("Checkpoint manager not available.")
+        return True
+
+    parts = args.strip().split(maxsplit=2)
+    if not parts:
+        renderer.print_info("Checkpoint commands:")
+        renderer.print_info("  /checkpoint save [name]  - Save current state")
+        renderer.print_info("  /checkpoint list        - List checkpoints")
+        renderer.print_info("  /checkpoint restore <id> - Restore checkpoint")
+        renderer.print_info("  /checkpoint delete <id>  - Delete checkpoint")
+        renderer.print_info("  /checkpoint diff <id>   - Show changes since checkpoint")
+        return True
+
+    subcmd = parts[0]
+
+    if subcmd == "save":
+        name = parts[1] if len(parts) > 1 else f"Checkpoint {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        checkpoint = _checkpoint_manager.create(
+            name=name,
+            messages=[],
+            tool_invocations=[],
+        )
+        renderer.print_success(f"Saved checkpoint: {checkpoint.id} - {name}")
+        return True
+
+    elif subcmd == "list":
+        checkpoints = _checkpoint_manager.list()
+        if not checkpoints:
+            renderer.print_info("No checkpoints found.")
+            return True
+        table = Table(title="Checkpoints", show_header=True, header_style="bold cyan")
+        table.add_column("ID", style="cyan")
+        table.add_column("Name")
+        table.add_column("Created")
+        table.add_column("Messages")
+        table.add_column("Tools")
+        for cp in checkpoints:
+            table.add_row(
+                cp.id[:8],
+                cp.name,
+                cp.timestamp[:19],
+                str(cp.message_count),
+                str(cp.tool_count),
+            )
+        renderer.console.print(table)
+        return True
+
+    elif subcmd == "restore":
+        if len(parts) < 2:
+            renderer.print_error("Usage: /checkpoint restore <id>")
+            return True
+        checkpoint_id = parts[1]
+        mode = RestoreMode.FULL
+        if len(parts) > 2 and parts[2] == "--merge":
+            mode = RestoreMode.MERGE
+        result = _checkpoint_manager.restore(checkpoint_id, mode)
+        if result:
+            renderer.print_success(f"Restored checkpoint: {checkpoint_id}")
+        else:
+            renderer.print_error(f"Checkpoint not found: {checkpoint_id}")
+        return True
+
+    elif subcmd == "delete":
+        if len(parts) < 2:
+            renderer.print_error("Usage: /checkpoint delete <id>")
+            return True
+        checkpoint_id = parts[1]
+        if _checkpoint_manager.delete(checkpoint_id):
+            renderer.print_success(f"Deleted checkpoint: {checkpoint_id}")
+        else:
+            renderer.print_error(f"Checkpoint not found: {checkpoint_id}")
+        return True
+
+    elif subcmd == "diff":
+        if len(parts) < 2:
+            renderer.print_error("Usage: /checkpoint diff <id>")
+            return True
+        checkpoint_id = parts[1]
+        result = _checkpoint_manager.restore(checkpoint_id, RestoreMode.PREVIEW)
+        if result:
+            renderer.print_info(f"Changes since checkpoint {checkpoint_id[:8]}:")
+            changes = result.get("changes", {})
+            renderer.print_info(f"  Added files: {len(changes.get('added_files', []))}")
+            renderer.print_info(f"  Modified files: {len(changes.get('modified_files', []))}")
+            renderer.print_info(f"  Removed files: {len(changes.get('removed_files', []))}")
+        else:
+            renderer.print_error(f"Checkpoint not found: {checkpoint_id}")
+        return True
+
+    else:
+        renderer.print_error(f"Unknown checkpoint command: {subcmd}")
+        return True
+
+
+from datetime import datetime
+
+
 def _get_workflows_dir() -> Path:
     """Return the path to the built-in workflows directory."""
     return Path(__file__).parent.parent / "workflows"
@@ -852,6 +972,7 @@ def cmd_workflow(
 
 COMMANDS: dict[str, CommandHandler] = {
     "help": CommandHandler("help", cmd_help, "Show help message", False),
+    "checkpoint": CommandHandler("checkpoint", cmd_checkpoint, "Manage checkpoints (save, list, restore, delete)", False),
     "clear": CommandHandler("clear", cmd_clear, "Clear conversation history", False),
     "compact": CommandHandler("compact", cmd_compact, "Manually trigger conversation truncation", False),
     "sessions": CommandHandler("sessions", cmd_sessions, "List saved sessions", False),
