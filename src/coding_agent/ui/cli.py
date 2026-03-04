@@ -438,6 +438,11 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     from coding_agent.ui.slash_commands import set_workflow_manager
     set_workflow_manager(workflow_manager)
 
+    from coding_agent.ui.slash_commands import set_checkpoint_manager
+    from coding_agent.checkpoint import CheckpointManager
+    checkpoint_manager = CheckpointManager()
+    set_checkpoint_manager(checkpoint_manager)
+
     renderer.print_info("Type 'exit' to quit.\n")
 
     import subprocess
