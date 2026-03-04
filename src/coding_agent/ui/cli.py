@@ -43,6 +43,7 @@ from coding_agent.config import (
     get_runtime_config,
     set_runtime_config,
 )
+from coding_agent.ui.progress import set_progress_config_override, ProgressConfig, ProgressStyle
 from coding_agent.core.conversation import ConversationManager
 from coding_agent.core.llm import LLMClient
 from coding_agent.config.project_instructions import get_enhanced_system_prompt
@@ -144,7 +145,9 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 @click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
 @click.option("--ollama", "ollama_model", default=None, metavar="MODEL",
               help="Use a local Ollama model, e.g. llama3.2 or qwen2.5-coder:7b")
-def cli(ctx, model, api_base, temperature, max_output_tokens, top_p, resume, session_id, ollama_model):
+@click.option("--progress/--no-progress", default=True, help="Show progress indicators")
+@click.option("--progress-style", type=click.Choice(["bar", "dots", "minimal"]), default="bar", help="Progress bar style")
+def cli(ctx, model, api_base, temperature, max_output_tokens, top_p, resume, session_id, ollama_model, progress, progress_style):
     """Coding-Agent CLI."""
     ctx.ensure_object(dict)
     ctx.obj["model"] = model
@@ -155,6 +158,8 @@ def cli(ctx, model, api_base, temperature, max_output_tokens, top_p, resume, ses
     ctx.obj["resume"] = resume
     ctx.obj["session_id"] = session_id
     ctx.obj["ollama_model"] = ollama_model
+    ctx.obj["progress"] = progress
+    ctx.obj["progress_style"] = progress_style
     if ctx.invoked_subcommand is None:
         ctx.invoke(run)
 
@@ -263,8 +268,10 @@ def skills(choice):
 @click.option("--session", "session_id", default=None, help="Resume a specific session by ID")
 @click.option("--ollama", "ollama_model", default=None, metavar="MODEL",
               help="Use a local Ollama model, e.g. llama3.2 or qwen2.5-coder:7b")
+@click.option("--progress/--no-progress", default=True, help="Show progress indicators")
+@click.option("--progress-style", type=click.Choice(["bar", "dots", "minimal"]), default="bar", help="Progress bar style")
 @click.pass_context
-def run(ctx, model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None) -> None:
+def run(ctx, model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None, progress: bool, progress_style: str) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
     # Use parent context options as defaults if not provided
     parent = ctx.parent
@@ -285,6 +292,17 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             session_id = parent.obj.get("session_id")
         if ollama_model is None:
             ollama_model = parent.obj.get("ollama_model")
+        if progress is None:
+            progress = parent.obj.get("progress")
+        if progress_style is None:
+            progress_style = parent.obj.get("progress_style")
+
+    set_progress_config_override(
+        lambda: ProgressConfig(
+            enabled=progress if progress is not None else True,
+            style=ProgressStyle(progress_style) if progress_style else ProgressStyle.BAR,
+        )
+    )
 
     ensure_docs_installed()
     os.environ["LITELLM_NO_PROVIDER_LIST"] = "1"

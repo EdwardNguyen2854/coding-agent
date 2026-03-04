@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from coding_agent.ui.progress import create_workflow_progress, should_show_progress
 from coding_agent.workflow.models import Workflow, WorkflowStep
 from coding_agent.workflow.resolver import VariableResolver
 from coding_agent.workflow.skills import SkillResolver
@@ -89,11 +90,37 @@ class WorkflowExecutor:
 
     async def run(self) -> None:
         """Run all workflow steps."""
+        step_names = [f"Step {i+1}: {step.id}" for i, step in enumerate(self.workflow.steps)]
+
+        total_steps = len(self.workflow.steps)
+        completed_steps = len(self.workflow.completed_steps)
+
+        if should_show_progress() and total_steps > 0:
+            progress = create_workflow_progress(step_names)
+            progress.start()
+
+            for completed in self.workflow.completed_steps:
+                idx = next((i for i, s in enumerate(self.workflow.steps) if s.id == completed), -1)
+                if idx >= 0:
+                    progress.next_step()
+
+            try:
+                await self._run_steps(progress)
+            finally:
+                progress.stop()
+        else:
+            await self._run_steps(None)
+
+    async def _run_steps(self, progress) -> None:
+        """Internal method to run workflow steps with optional progress."""
         for i, step in enumerate(self.workflow.steps):
             if step.id in self.workflow.completed_steps:
                 continue
 
             self.workflow.current_step = i
+
+            if progress:
+                progress.next_step(step.title or step.id)
 
             result = await self.execute_step(step)
 
