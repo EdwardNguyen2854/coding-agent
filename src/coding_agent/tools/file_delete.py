@@ -66,9 +66,14 @@ class FileDeleteTool:
         except OSError as exc:
             return ToolResult.failure("DELETE_ERROR", f"Could not delete: {exc}")
 
+        try:
+            deleted_path = str(path.relative_to(self._workspace_root))
+        except ValueError:
+            deleted_path = str(path)
+
         return ToolResult.success(
             data={
-                "deleted": str(path.relative_to(self._workspace_root)),
+                "deleted": deleted_path,
                 "was_directory": is_dir,
             },
             message=f"Deleted {'directory' if is_dir else 'file'}: {path.name}",

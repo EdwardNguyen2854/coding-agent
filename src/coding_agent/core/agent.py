@@ -137,6 +137,9 @@ class Agent:
             if response is None:
                 return ""
 
+            if not response.choices:
+                return ""
+
             assistant_message = response.choices[0].message.content
             tool_calls = response.choices[0].message.tool_calls
 
@@ -172,7 +175,8 @@ class Agent:
                     return ""
                 self._handle_tool_call(tc)
 
-            self.consecutive_failures = 0
+            if self.consecutive_failures >= self.max_retries:
+                return ""
 
     def _handle_tool_call(self, tool_call: Any) -> None:
         """Handle a single tool call.

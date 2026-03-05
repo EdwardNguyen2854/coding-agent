@@ -60,8 +60,6 @@ from coding_agent.workflow import WorkflowManager, WorkflowState
 import litellm
 litellm.suppress_debug_info = True
 
-from coding_agent import __version__
-
 STYLED_PROMPT = FormattedText([
     ("class:user", "You"),
     ("class:arrow", " > "),
@@ -87,7 +85,7 @@ def _restore_conversation(conversation: ConversationManager, messages: list[dict
     for msg in messages:
         if msg.get("role") == "system":
             continue  # Skip system prompt, we use default
-        elif msg.get("tool_calls"):
+        elif isinstance(msg.get("tool_calls"), list) and msg["tool_calls"]:
             conversation.add_assistant_tool_call(
                 msg.get("content", ""),
                 msg["tool_calls"]

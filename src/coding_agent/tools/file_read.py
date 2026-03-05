@@ -104,12 +104,14 @@ def execute(args: dict[str, Any]) -> _LegacyResult:
 
     path = Path(path_str)
 
-    # Detect binary files before delegating
+    # Detect binary files before delegating (single bytes read, no double text read)
     if path.exists() and path.is_file():
         try:
-            path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            return _LegacyResult(is_error=True, error="binary file cannot be read as text")
+            raw = path.read_bytes()
+            if b"\x00" in raw:
+                return _LegacyResult(is_error=True, error="binary file cannot be read as text")
+        except OSError:
+            pass
 
     workspace = str(path.parent.resolve()) if path.is_absolute() else str(Path.cwd())
     tool = FileReadTool(workspace_root=workspace)

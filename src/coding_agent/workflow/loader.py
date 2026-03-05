@@ -1,7 +1,10 @@
+import logging
 from importlib.resources import files
 from pathlib import Path
 
 from coding_agent.workflow.models import Workflow
+
+_log = logging.getLogger(__name__)
 from coding_agent.workflow.parser import parse_workflow, validate_workflow
 from coding_agent.workflow.registry import WorkflowRegistry, WorkflowRegistryEntry
 from coding_agent.workflow.native_loader import NativeWorkflowLoader
@@ -14,8 +17,8 @@ def _get_package_workflow_dir() -> Path | None:
         wf_dir = pkg / "workflows"
         if wf_dir.is_dir():
             return Path(str(wf_dir))
-    except Exception:
-        pass
+    except Exception as e:
+        _log.debug("Could not locate package workflow dir: %s", e)
     return None
 
 
@@ -130,7 +133,8 @@ def list_workflows() -> list[Workflow]:
                 workflow = native_loader.load_workflow(name)
                 if workflow:
                     workflows.append(workflow)
-            except Exception:
+            except Exception as e:
+                _log.debug("Failed to load native workflow %r: %s", name, e)
                 continue
 
         registry = _get_registry(dir_path)
@@ -140,14 +144,16 @@ def list_workflows() -> list[Workflow]:
                 try:
                     workflow = parse_workflow(wf_file)
                     workflows.append(workflow)
-                except Exception:
+                except Exception as e:
+                    _log.debug("Failed to parse workflow %s: %s", wf_file, e)
                     continue
 
         for wf_file in dir_path.glob("*.yaml"):
             try:
                 workflow = parse_workflow(wf_file)
                 workflows.append(workflow)
-            except Exception:
+            except Exception as e:
+                _log.debug("Failed to parse workflow %s: %s", wf_file, e)
                 continue
 
         examples_dir = dir_path / "examples"
@@ -156,7 +162,8 @@ def list_workflows() -> list[Workflow]:
                 try:
                     workflow = parse_workflow(wf_file)
                     workflows.append(workflow)
-                except Exception:
+                except Exception as e:
+                    _log.debug("Failed to parse example workflow %s: %s", wf_file, e)
                     continue
 
     return workflows

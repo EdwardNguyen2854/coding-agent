@@ -62,9 +62,9 @@ class Database:
         # Handle multiple statements (split by semicolon)
         statements = [s.strip() for s in query.split(";") if s.strip()]
         if len(statements) > 1:
-            # Execute each statement separately
-            for stmt in statements[:-1]:  # All but last (last one will be handled by regular execute)
-                self._conn.execute(stmt, params or ())
+            # Execute each statement separately; params apply only to the last statement
+            for stmt in statements[:-1]:
+                self._conn.execute(stmt)
             return self._conn.execute(statements[-1], params or ())
         
         return self._conn.execute(query, params or ())
