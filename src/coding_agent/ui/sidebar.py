@@ -21,6 +21,7 @@ def make_toolbar(
     workflow: "Workflow | None",
     branch: str,
     context_limit: int = DEFAULT_CONTEXT_LIMIT,
+    get_active_sub_agent: "object | None" = None,
 ):
     """Create a bottom_toolbar callable for use with prompt_toolkit PromptSession.
 
@@ -48,8 +49,20 @@ def make_toolbar(
         else:
             ctx_style = "fg:ansigreen"
 
-        parts: list[tuple[str, str]] = [
-            ("", f"  Ctx: {token_count:,} "),
+        parts: list[tuple[str, str]] = []
+
+        # Sub-agent indicator goes first when active
+        active_sub_agent = get_active_sub_agent() if get_active_sub_agent is not None else None
+        if active_sub_agent:
+            parts += [
+                ("fg:ansimagenta bold", f"  Sub-agent: {active_sub_agent.capitalize()}"),
+                ("", " | "),
+            ]
+        else:
+            parts.append(("", "  "))
+
+        parts += [
+            ("", f"Context: {token_count:,} "),
             (ctx_style, f"({percentage:.1f}%)"),
             ("", "  │  "),
             ("", f"Branch: {branch}"),

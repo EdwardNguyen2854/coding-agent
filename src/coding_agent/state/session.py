@@ -373,7 +373,7 @@ class SessionManager:
         sub_agents = self.get_sub_agents(session_id)
 
         runtime_config = {}
-        if row.get("runtime_config"):
+        if row["runtime_config"]:
             try:
                 runtime_config = json.loads(row["runtime_config"])
             except (json.JSONDecodeError, ValueError):
@@ -705,6 +705,35 @@ class SessionManager:
         self._db.commit()
 
         return True
+
+    def get_sub_agent_by_name(self, session_id: str, name: str) -> dict[str, Any] | None:
+        """Get a sub-agent by name within a session.
+
+        Args:
+            session_id: Session ID
+            name: Sub-agent name
+
+        Returns:
+            Sub-agent dict or None if not found
+        """
+        if self._legacy_mode:
+            return None
+
+        row = self._db.execute(
+            "SELECT * FROM sub_agents WHERE session_id = ? AND name = ?",
+            (session_id, name),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        return {
+            "id": row["id"],
+            "session_id": row["session_id"],
+            "name": row["name"],
+            "role": row["role"],
+            "created_at": row["created_at"],
+        }
 
     def search(self, query: str) -> list[dict[str, Any]]:
         """Search sessions by title.

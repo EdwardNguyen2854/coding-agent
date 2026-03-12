@@ -378,6 +378,11 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     # Create Agent instance
     agent = Agent(llm_client, conversation, renderer, config=config)
 
+    # Register the spawn_sub_agent tool (requires llm_client, session_manager, etc.)
+    from coding_agent.tools import register_spawn_sub_agent_tool
+    workspace_root = os.getcwd()
+    register_spawn_sub_agent_tool(llm_client, session_manager, config, workspace_root, renderer)
+
     # Load skills from SKILL.md and register as slash commands
     skills, skill_files = load_skills()
     if skills:
@@ -433,6 +438,11 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
 
     current_workflow.set_task_complete_callback(on_task_complete)
 
+    # Update spawn_sub_agent with any resumed session data
+    if session_data is not None:
+        from coding_agent.tools.spawn_sub_agent import update_session_data
+        update_session_data(session_data)
+
     from coding_agent.ui.slash_commands import set_workflow_manager
     set_workflow_manager(workflow_manager)
 
@@ -460,11 +470,13 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     # Slash command autocomplete
     slash_completer = SlashCommandCompleter()
 
+    from coding_agent.tools.spawn_sub_agent import get_active_sub_agent_name
     toolbar_func = make_toolbar(
         conversation=conversation,
         workflow=current_workflow,
         branch=branch_name,
         context_limit=128000,
+        get_active_sub_agent=get_active_sub_agent_name,
     )
 
     from coding_agent.ui.interrupt import get_interrupt_handler, trigger_interrupt
@@ -540,6 +552,8 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             )
             renderer.print_info(f"Session created: {session_data['title']}")
             agent.set_session(session_manager, session_data)
+            from coding_agent.tools.spawn_sub_agent import update_session_data
+            update_session_data(session_data)
 
         # Delegate to Agent for ReAct loop
         try:
