@@ -470,11 +470,13 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     # Slash command autocomplete
     slash_completer = SlashCommandCompleter()
 
+    from coding_agent.tools.spawn_sub_agent import get_active_sub_agent_name
     toolbar_func = make_toolbar(
         conversation=conversation,
         workflow=current_workflow,
         branch=branch_name,
         context_limit=128000,
+        get_active_sub_agent=get_active_sub_agent_name,
     )
 
     from coding_agent.ui.interrupt import get_interrupt_handler, trigger_interrupt

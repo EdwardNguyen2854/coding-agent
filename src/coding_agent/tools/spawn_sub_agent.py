@@ -43,6 +43,12 @@ _config = None
 _workspace_root: str | None = None
 _renderer = None
 _team_mode: bool = False
+_active_sub_agent_name: str | None = None  # set while a sub-agent is running
+
+
+def get_active_sub_agent_name() -> str | None:
+    """Return the name of the currently running sub-agent, or None."""
+    return _active_sub_agent_name
 
 
 def setup_spawn_sub_agent(llm_client, session_manager, config, workspace_root, renderer) -> None:
@@ -134,15 +140,33 @@ class SpawnSubAgentTool:
             workspace_root=_workspace_root,
         )
 
+        global _active_sub_agent_name
+        _active_sub_agent_name = name
         try:
             result = sub_agent_instance.run(task)
         except Exception as exc:
+            _active_sub_agent_name = None
             if _renderer:
                 _renderer.print_error(f"--- Sub-agent {name} failed ---")
             return ToolResult.failure("SUB_AGENT_ERROR", f"Sub-agent '{name}' encountered an error: {exc}")
+        finally:
+            _active_sub_agent_name = None
 
-        if _renderer:
-            _renderer.print_info(f"--- Sub-agent {name} done ---")
+        # Print result summary
+        if _renderer and result:
+            from rich.panel import Panel
+            from rich.text import Text
+            summary_text = result[:400] + ("…" if len(result) > 400 else "")
+            _renderer.console.print(
+                Panel(
+                    Text(summary_text),
+                    title=f"[bold cyan]Sub-agent: {name}[/] — done",
+                    border_style="cyan",
+                    expand=False,
+                )
+            )
+        elif _renderer:
+            _renderer.print_info(f"--- Sub-agent {name} done (no output) ---")
 
         # Persist sub-agent messages to DB
         sub_messages = sub_conversation.get_messages()

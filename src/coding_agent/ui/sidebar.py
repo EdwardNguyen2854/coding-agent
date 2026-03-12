@@ -21,6 +21,7 @@ def make_toolbar(
     workflow: "Workflow | None",
     branch: str,
     context_limit: int = DEFAULT_CONTEXT_LIMIT,
+    get_active_sub_agent: "object | None" = None,
 ):
     """Create a bottom_toolbar callable for use with prompt_toolkit PromptSession.
 
@@ -78,6 +79,14 @@ def make_toolbar(
                 parts += [
                     ("", "  │  "),
                     ("", f"Todos: {summary}"),
+                ]
+
+        if get_active_sub_agent is not None:
+            active = get_active_sub_agent()
+            if active:
+                parts += [
+                    ("", "  │  "),
+                    ("fg:ansimagenta bold", f"⟳ sub-agent: {active}"),
                 ]
 
         parts.append(("", "  "))
