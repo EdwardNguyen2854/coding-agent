@@ -173,6 +173,43 @@ def cmd_exit(args: str, conversation: ConversationManager, session_manager: Sess
     return False
 
 
+def _render_todo_table(todos, renderer) -> None:
+    """Render a rich table of all todo items."""
+    from rich.table import Table
+    from coding_agent.state.todo import TaskStatus
+
+    _STATUS_ICON = {
+        TaskStatus.PENDING: "○ pending",
+        TaskStatus.IN_PROGRESS: "▶ in_progress",
+        TaskStatus.COMPLETED: "✓ completed",
+        TaskStatus.BLOCKED: "✗ blocked",
+    }
+    _STATUS_STYLE = {
+        TaskStatus.PENDING: "white",
+        TaskStatus.IN_PROGRESS: "bold green",
+        TaskStatus.COMPLETED: "dim",
+        TaskStatus.BLOCKED: "bold yellow",
+    }
+
+    table = Table(title="Todo List", show_header=True, header_style="bold cyan")
+    table.add_column("ID", style="dim", no_wrap=True)
+    table.add_column("Status", no_wrap=True)
+    table.add_column("Description")
+
+    for item in todos.items:
+        style = _STATUS_STYLE.get(item.status, "")
+        icon = _STATUS_ICON.get(item.status, item.status.value)
+        table.add_row(item.id, icon, item.description, style=style)
+
+    blocked = todos.get_blocked()
+    summary = (
+        f"{todos.completed_count}/{todos.total} completed"
+        + (f", {len(blocked)} blocked" if blocked else "")
+    )
+    renderer.console.print(table)
+    renderer.console.print(f"  {summary}", style="dim")
+
+
 def cmd_todo(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Show or manage todo list."""
     wm = get_workflow_manager()
@@ -187,8 +224,7 @@ def cmd_todo(args: str, conversation: ConversationManager, session_manager: Sess
         if todos.total == 0:
             renderer.print_info("No tasks in todo list.")
         else:
-            markdown_output = todos.to_markdown()
-            renderer.console.print(markdown_output)
+            _render_todo_table(todos, renderer)
         return True
 
     action = args.strip().split()[0] if args.strip() else ""
@@ -199,21 +235,67 @@ def cmd_todo(args: str, conversation: ConversationManager, session_manager: Sess
     elif action == "next":
         next_task = todos.get_next()
         if next_task:
-            renderer.print_info(f"Next task: {next_task.description}")
+            renderer.print_info(f"Next task [{next_task.id}]: {next_task.description}")
         else:
             renderer.print_info("No pending tasks.")
-    elif action.startswith("done:"):
-        task_desc = args[5:].strip()
-        for item in todos.items:
-            if item.description == task_desc and item.status != "completed":
-                workflow.complete_task(item.id)
-                break
+    elif action.startswith("add"):
+        desc = args[3:].strip()
+        if not desc:
+            renderer.print_error("Usage: /todo add <description>")
         else:
-            renderer.print_error(f"Task not found: {task_desc}")
+            item = todos.add(desc)
+            renderer.print_success(f"Added [{item.id}]: {item.description}")
+    elif action.startswith("start:"):
+        task_ref = args[6:].strip()
+        item = _resolve_task(todos, task_ref)
+        if item:
+            workflow.start_task(item.id)
+            renderer.print_success(f"Started [{item.id}]: {item.description}")
+        else:
+            renderer.print_error(f"Task not found: {task_ref}")
+    elif action.startswith("done:"):
+        task_ref = args[5:].strip()
+        item = _resolve_task(todos, task_ref)
+        if item:
+            workflow.complete_task(item.id)
+            renderer.print_success(f"Completed [{item.id}]: {item.description}")
+        else:
+            renderer.print_error(f"Task not found: {task_ref}")
+    elif action.startswith("block:"):
+        task_ref = args[6:].strip()
+        item = _resolve_task(todos, task_ref)
+        if item:
+            workflow.block_task(item.id)
+            renderer.print_warning(f"Blocked [{item.id}]: {item.description}")
+        else:
+            renderer.print_error(f"Task not found: {task_ref}")
     else:
-        renderer.print_info("Usage: /todo [clear|next|done:<task description>]")
+        renderer.print_info(
+            "Usage: /todo [add <desc>|start:<id>|done:<id>|block:<id>|clear|next]"
+        )
 
     return True
+
+
+def _resolve_task(todos, task_ref: str):
+    """Resolve a task by ID (e.g. 'task-2') or exact/partial description.
+
+    Returns the first matching TodoItem, or None.
+    """
+    from coding_agent.state.todo import TaskStatus
+    # Try exact ID match first
+    for item in todos.items:
+        if item.id == task_ref:
+            return item
+    # Then exact description match (excluding completed)
+    matches = [i for i in todos.items if i.description == task_ref and i.status != TaskStatus.COMPLETED]
+    if len(matches) == 1:
+        return matches[0]
+    # Finally substring match
+    matches = [i for i in todos.items if task_ref.lower() in i.description.lower() and i.status != TaskStatus.COMPLETED]
+    if len(matches) == 1:
+        return matches[0]
+    return None
 
 
 def cmd_approve(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:

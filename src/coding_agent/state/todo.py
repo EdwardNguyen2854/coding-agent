@@ -94,6 +94,14 @@ class TodoList:
                 return True
         return False
 
+    def block(self, task_id: str) -> bool:
+        """Mark a task as blocked."""
+        for item in self._items:
+            if item.id == task_id:
+                item.status = TaskStatus.BLOCKED
+                return True
+        return False
+
     def get_pending(self) -> list[TodoItem]:
         """Get all pending/in-progress tasks."""
         return [i for i in self._items if i.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)]
@@ -101,6 +109,10 @@ class TodoList:
     def get_completed(self) -> list[TodoItem]:
         """Get all completed tasks."""
         return [i for i in self._items if i.status == TaskStatus.COMPLETED]
+
+    def get_blocked(self) -> list[TodoItem]:
+        """Get all blocked tasks."""
+        return [i for i in self._items if i.status == TaskStatus.BLOCKED]
 
     def get_next(self) -> TodoItem | None:
         """Get the next pending task."""
@@ -147,6 +159,8 @@ class TodoList:
                 status = "[x]"
             elif item.status == TaskStatus.IN_PROGRESS:
                 status = "[>]"
+            elif item.status == TaskStatus.BLOCKED:
+                status = "[!]"
             else:
                 status = "[ ]"
             lines.append(f"{status} {i}. {item.description}")
@@ -160,13 +174,15 @@ class TodoList:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            match = re.match(r"(\[x\]|\[>\]|\[ \])\s*(\d+\.)\s*(.+)", line)
+            match = re.match(r"(\[x\]|\[>\]|\[!\]|\[ \])\s*(\d+\.)\s*(.+)", line)
             if match:
                 status_str, _, desc = match.groups()
                 if status_str == "[x]":
                     status = TaskStatus.COMPLETED
                 elif status_str == "[>]":
                     status = TaskStatus.IN_PROGRESS
+                elif status_str == "[!]":
+                    status = TaskStatus.BLOCKED
                 else:
                     status = TaskStatus.PENDING
                 items.append(TodoItem(id=f"task-{len(items)+1}", description=desc, status=status))
