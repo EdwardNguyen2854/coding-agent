@@ -49,8 +49,20 @@ def make_toolbar(
         else:
             ctx_style = "fg:ansigreen"
 
-        parts: list[tuple[str, str]] = [
-            ("", f"  Ctx: {token_count:,} "),
+        parts: list[tuple[str, str]] = []
+
+        # Sub-agent indicator goes first when active
+        active_sub_agent = get_active_sub_agent() if get_active_sub_agent is not None else None
+        if active_sub_agent:
+            parts += [
+                ("fg:ansimagenta bold", f"  Sub-agent: {active_sub_agent.capitalize()}"),
+                ("", " | "),
+            ]
+        else:
+            parts.append(("", "  "))
+
+        parts += [
+            ("", f"Context: {token_count:,} "),
             (ctx_style, f"({percentage:.1f}%)"),
             ("", "  │  "),
             ("", f"Branch: {branch}"),
@@ -79,14 +91,6 @@ def make_toolbar(
                 parts += [
                     ("", "  │  "),
                     ("", f"Todos: {summary}"),
-                ]
-
-        if get_active_sub_agent is not None:
-            active = get_active_sub_agent()
-            if active:
-                parts += [
-                    ("", "  │  "),
-                    ("fg:ansimagenta bold", f"⟳ sub-agent: {active}"),
                 ]
 
         parts.append(("", "  "))
