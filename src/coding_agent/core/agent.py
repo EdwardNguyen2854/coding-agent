@@ -40,7 +40,8 @@ class Agent:
         self.permissions = PermissionSystem(renderer)
         self.max_context_tokens = config.max_context_tokens if config else 128000
         self.workspace_root = workspace_root or os.getcwd()
-        
+        self._pre_save_hook = None
+
         output_config = config.output if config else None
         self.output_formatter = ToolOutputFormatter(output_config)
 
@@ -283,6 +284,8 @@ class Agent:
     def _save_session(self) -> None:
         """Auto-save session after assistant completes a response."""
         if self.session_manager and self.session_data:
+            if self._pre_save_hook:
+                self._pre_save_hook(self.session_data)
             self.session_data["messages"] = self.conversation.get_messages()
             self.session_manager.save(self.session_data)
 

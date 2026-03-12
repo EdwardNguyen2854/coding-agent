@@ -139,6 +139,26 @@ class Workflow:
         """Mark a task as in progress."""
         return self.todo_list.start(task_id)
 
+    def block_task(self, task_id: str) -> bool:
+        """Mark a task as blocked."""
+        return self.todo_list.block(task_id)
+
+    def to_dict(self) -> dict:
+        """Serialize workflow state for persistence."""
+        return {
+            "state": self.state.value,
+            "todo_list": self.todo_list.to_dict(),
+        }
+
+    @classmethod
+    def restore_from_dict(cls, workflow: "Workflow", data: dict) -> None:
+        """Restore workflow state from a serialized dict (in-place)."""
+        from coding_agent.state.todo import TodoList
+        workflow.state = WorkflowState(data.get("state", WorkflowState.IDLE.value))
+        todo_data = data.get("todo_list")
+        if todo_data:
+            workflow.todo_list = TodoList.from_dict(todo_data)
+
     def save_todos(self) -> Path:
         """Save the todo list to disk."""
         from coding_agent.state.todo import TodoMarkdownStore

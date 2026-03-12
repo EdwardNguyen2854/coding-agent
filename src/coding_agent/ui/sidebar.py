@@ -80,7 +80,10 @@ def make_toolbar(
             in_progress = next(
                 (i for i in todos.items if i.status.value == "in_progress"), None
             )
+            blocked_count = len(todos.get_blocked())
             summary = f"{todos.completed_count}/{todos.total}"
+            if blocked_count:
+                summary += f"  ✗{blocked_count}"
             if in_progress:
                 label = in_progress.description[:30]
                 parts += [

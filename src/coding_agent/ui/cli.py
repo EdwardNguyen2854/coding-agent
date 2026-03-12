@@ -432,11 +432,29 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     workflow_manager = WorkflowManager(context_limit=128000)
     current_workflow = workflow_manager.get_current()
 
+    # Restore todo state from saved session if present
+    if session_data is not None:
+        from coding_agent.state.workflow_impl import Workflow as _Workflow
+        saved_todos = session_data.get("runtime_config", {}).get("todos")
+        if saved_todos:
+            _Workflow.restore_from_dict(current_workflow, saved_todos)
+            renderer.print_info(
+                f"Restored {current_workflow.todo_list.total} todos "
+                f"({current_workflow.todo_list.completed_count} completed)"
+            )
+
     def on_task_complete(completed_item):
         renderer.print_success(f"Task completed: {completed_item.description}")
         renderer.print_info(f"Progress: {current_workflow.todo_list.completed_count}/{current_workflow.todo_list.total}")
 
     current_workflow.set_task_complete_callback(on_task_complete)
+
+    # Persist todo state into session on every save
+    def _todo_pre_save_hook(session_data_dict: dict) -> None:
+        session_data_dict.setdefault("runtime_config", {})
+        session_data_dict["runtime_config"]["todos"] = current_workflow.to_dict()
+
+    agent._pre_save_hook = _todo_pre_save_hook
 
     # Update spawn_sub_agent with any resumed session data
     if session_data is not None:
