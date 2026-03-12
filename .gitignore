@@ -39,7 +39,6 @@ coverage.xml
 
 # Local agent instruction files (keep untracked)
 AGENTS.md
-CLAUDE.md
 
 # Runtime data directory
 .coding-agent/
