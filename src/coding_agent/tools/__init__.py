@@ -53,7 +53,7 @@ __all__ = [
     "RunTestsTool", "RunLintTool", "TypecheckTool",
     "DependenciesReadTool", "SymbolsIndexTool", "StateGetTool", "StateSetTool",
     "build_tools", "get_openai_tools", "execute_tool",
-    "register_tool", "tool_registry",
+    "register_tool", "tool_registry", "register_spawn_sub_agent_tool",
 ]
 
 
@@ -133,6 +133,23 @@ def get_openai_tools(
         }
         for t in tools
     ]
+
+
+def register_spawn_sub_agent_tool(llm_client, session_manager, config, workspace_root, renderer) -> None:
+    """Register the spawn_sub_agent tool with runtime dependencies.
+
+    Call this once after get_openai_tools() and after all other resources are initialized.
+    """
+    from coding_agent.tools.spawn_sub_agent import SpawnSubAgentTool, setup_spawn_sub_agent
+    setup_spawn_sub_agent(llm_client, session_manager, config, workspace_root, renderer)
+    tool = SpawnSubAgentTool()
+    tool_registry["spawn_sub_agent"] = ToolDefinition(
+        name="spawn_sub_agent",
+        description=tool.schema()["description"],
+        parameters=tool.schema()["properties"],
+        handler=tool.run,
+        schema=tool.schema(),
+    )
 
 
 def execute_tool(name: str, args: dict[str, Any]) -> Any:

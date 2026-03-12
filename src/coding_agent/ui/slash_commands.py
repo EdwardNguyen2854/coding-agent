@@ -970,6 +970,165 @@ def cmd_workflow(
     return True
 
 
+def cmd_agent(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Manage agent mode and sub-agents.
+
+    Subcommands:
+      team-mode on|off  — Enable or disable team mode (allow sub-agent delegation)
+      list              — List sub-agents spawned in the current session
+      status            — Show current mode and sub-agent summary (default)
+    """
+    from coding_agent.tools.spawn_sub_agent import is_team_mode, set_team_mode
+
+    subcommand = args.strip() if args else "status"
+    parts = subcommand.split(None, 1)
+    cmd = parts[0].lower() if parts else "status"
+    cmd_args = parts[1] if len(parts) > 1 else ""
+
+    if cmd == "team-mode":
+        if cmd_args.lower() == "on":
+            set_team_mode(True)
+            renderer.print_info(
+                "Team mode ON — main agent can now delegate tasks to sub-agents via spawn_sub_agent tool."
+            )
+        elif cmd_args.lower() == "off":
+            set_team_mode(False)
+            renderer.print_info("Solo dev mode — single agent handles all tasks.")
+        else:
+            renderer.print_error("Usage: /agent team-mode on|off")
+        return True
+
+    if cmd == "list":
+        session_data = agent.session_data if agent else None
+        if session_data is None:
+            renderer.print_info("No active session. Sub-agents are created within a session.")
+            return True
+        session_id = session_data.get("id")
+        sub_agents = session_manager.get_sub_agents(session_id)
+        if not sub_agents:
+            renderer.print_info("No sub-agents in this session yet.")
+            return True
+        table = Table(title="Sub-Agents", show_header=True, header_style="bold cyan")
+        table.add_column("Name", style="cyan")
+        table.add_column("Role")
+        table.add_column("Created", style="dim")
+        for sa in sub_agents:
+            table.add_row(sa["name"], sa["role"], sa.get("created_at", "")[:19])
+        renderer.console.print(table)
+        return True
+
+    if cmd == "status":
+        mode_label = "Team mode (sub-agent delegation enabled)" if is_team_mode() else "Solo dev mode (single agent)"
+        renderer.print_info(f"Agent mode: {mode_label}")
+        session_data = agent.session_data if agent else None
+        if session_data:
+            session_id = session_data.get("id")
+            sub_agents = session_manager.get_sub_agents(session_id)
+            renderer.print_info(f"Sub-agents in session: {len(sub_agents)}")
+        return True
+
+    renderer.print_error("Unknown subcommand. Usage: /agent [team-mode on|off | list | status]")
+    return True
+
+
+def cmd_filter(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Filter tool output by tool name, status, or pattern."""
+    filter_manager = get_filter_manager()
+
+    if not args or args.strip() == "clear":
+        filter_manager.clear_filters()
+        renderer.print_info("Output filters cleared.")
+        return True
+
+    if args.strip() == "show":
+        filters = filter_manager.filters
+        if not filters:
+            renderer.print_info("No active filters.")
+        else:
+            renderer.print_info("Active filters:")
+            for i, f in enumerate(filters):
+                parts = []
+                if f.tool_names:
+                    parts.append(f"tools: {', '.join(f.tool_names)}")
+                if f.statuses:
+                    parts.append(f"status: {', '.join(s.value for s in f.statuses)}")
+                if f.patterns:
+                    parts.append(f"patterns: {', '.join(f.patterns)}")
+                renderer.print_info(f"  {i + 1}. {' | '.join(parts)}")
+        return True
+
+    filter_obj = parse_filter_args(args)
+    filter_manager.add_filter(filter_obj)
+
+    parts = []
+    if filter_obj.tool_names:
+        parts.append(f"tools: {', '.join(filter_obj.tool_names)}")
+    if filter_obj.statuses:
+        parts.append(f"status: {', '.join(s.value for s in filter_obj.statuses)}")
+    if filter_obj.patterns:
+        parts.append(f"patterns: {', '.join(filter_obj.patterns)}")
+
+    renderer.print_success(f"Filter added: {' | '.join(parts)}")
+    return True
+
+
+def cmd_expand(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Expand a truncated tool output."""
+    filter_manager = get_filter_manager()
+
+    if not args:
+        renderer.print_error("Usage: /expand <output_id>")
+        return True
+
+    full_output = filter_manager.get_full_output(args)
+    if full_output is None:
+        renderer.print_error(f"Output not found: {args}")
+        return True
+
+    from rich.syntax import Syntax
+    from rich.panel import Panel
+    renderer.console.print(Panel(Syntax(full_output, "text", theme="ansi_dark"), title=f"Full Output: {args}"))
+    return True
+
+
+def cmd_output(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Show tool output history."""
+    filter_manager = get_filter_manager()
+    history = filter_manager.get_history()
+
+    if not history:
+        renderer.print_info("No tool outputs in history.")
+        return True
+
+    limit = 10
+    if args:
+        try:
+            limit = int(args)
+        except ValueError:
+            pass
+
+    from rich.table import Table
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("ID", style="dim")
+    table.add_column("Tool")
+    table.add_column("Status")
+    table.add_column("Preview")
+
+    for entry in history[-limit:]:
+        preview = entry["output"][:50].replace("\n", " ")
+        if len(entry["output"]) > 50:
+            preview += "..."
+        table.add_row(
+            entry["id"],
+            entry["tool_name"],
+            entry["status"].value,
+            preview,
+        )
+
+    renderer.console.print(table)
+    return True
+
+
 COMMANDS: dict[str, CommandHandler] = {
     "help": CommandHandler("help", cmd_help, "Show help message", False),
     "checkpoint": CommandHandler("checkpoint", cmd_checkpoint, "Manage checkpoints (save, list, restore, delete)", False),
@@ -995,6 +1154,7 @@ COMMANDS: dict[str, CommandHandler] = {
     "filter": CommandHandler("filter", cmd_filter, "Filter tool output (e.g., /filter tool:grep error)", False),
     "expand": CommandHandler("expand", cmd_expand, "Expand truncated tool output", True),
     "output": CommandHandler("output", cmd_output, "Show tool output history", False),
+    "agent": CommandHandler("agent", cmd_agent, "Manage agent mode: /agent team-mode on|off, /agent list, /agent status", False),
 }
 
 SLASH_COMMANDS = COMMANDS
@@ -1317,99 +1477,3 @@ def execute_command(
     return cmd.handler(args, conversation, session_manager, renderer, llm_client, agent)
 
 
-def cmd_filter(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
-    """Filter tool output by tool name, status, or pattern."""
-    filter_manager = get_filter_manager()
-    
-    if not args or args.strip() == "clear":
-        filter_manager.clear_filters()
-        renderer.print_info("Output filters cleared.")
-        return True
-    
-    if args.strip() == "show":
-        filters = filter_manager.filters
-        if not filters:
-            renderer.print_info("No active filters.")
-        else:
-            renderer.print_info("Active filters:")
-            for i, f in enumerate(filters):
-                parts = []
-                if f.tool_names:
-                    parts.append(f"tools: {', '.join(f.tool_names)}")
-                if f.statuses:
-                    parts.append(f"status: {', '.join(s.value for s in f.statuses)}")
-                if f.patterns:
-                    parts.append(f"patterns: {', '.join(f.patterns)}")
-                renderer.print_info(f"  {i + 1}. {' | '.join(parts)}")
-        return True
-    
-    filter_obj = parse_filter_args(args)
-    filter_manager.add_filter(filter_obj)
-    
-    parts = []
-    if filter_obj.tool_names:
-        parts.append(f"tools: {', '.join(filter_obj.tool_names)}")
-    if filter_obj.statuses:
-        parts.append(f"status: {', '.join(s.value for s in filter_obj.statuses)}")
-    if filter_obj.patterns:
-        parts.append(f"patterns: {', '.join(filter_obj.patterns)}")
-    
-    renderer.print_success(f"Filter added: {' | '.join(parts)}")
-    return True
-
-
-def cmd_expand(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
-    """Expand a truncated tool output."""
-    filter_manager = get_filter_manager()
-    
-    if not args:
-        renderer.print_error("Usage: /expand <output_id>")
-        return True
-    
-    full_output = filter_manager.get_full_output(args)
-    if full_output is None:
-        renderer.print_error(f"Output not found: {args}")
-        return True
-    
-    from rich.syntax import Syntax
-    from rich.panel import Panel
-    renderer.console.print(Panel(Syntax(full_output, "text", theme="ansi_dark"), title=f"Full Output: {args}"))
-    return True
-
-
-def cmd_output(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
-    """Show tool output history."""
-    filter_manager = get_filter_manager()
-    history = filter_manager.get_history()
-    
-    if not history:
-        renderer.print_info("No tool outputs in history.")
-        return True
-    
-    limit = 10
-    if args:
-        try:
-            limit = int(args)
-        except ValueError:
-            pass
-    
-    from rich.table import Table
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="dim")
-    table.add_column("Tool")
-    table.add_column("Status")
-    table.add_column("Preview")
-    
-    for entry in history[-limit:]:
-        preview = entry["output"][:50].replace("\n", " ")
-        if len(entry["output"]) > 50:
-            preview += "..."
-        table.add_row(
-            entry["id"],
-            entry["tool_name"],
-            entry["status"].value,
-            preview,
-        )
-    
-    renderer.console.print(table)
-    return True
