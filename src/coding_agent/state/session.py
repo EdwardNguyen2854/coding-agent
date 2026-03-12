@@ -373,7 +373,7 @@ class SessionManager:
         sub_agents = self.get_sub_agents(session_id)
 
         runtime_config = {}
-        if row.get("runtime_config"):
+        if row["runtime_config"]:
             try:
                 runtime_config = json.loads(row["runtime_config"])
             except (json.JSONDecodeError, ValueError):
