@@ -148,12 +148,12 @@ class PermissionSystem:
         if self._prompt_callback:
             return self._prompt_callback(tool_name, params, True)
 
-        prompt_text = f"Allow {tool_name}? [Y/n]: "
+        prompt_text = f"Allow {tool_name}? [y/N]: "
         try:
             response = input(prompt_text).strip().lower()
         except EOFError:
             return False
-        if response in ("", "y", "yes"):
+        if response in ("y", "yes"):
             return True
         return False
 

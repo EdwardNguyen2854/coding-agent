@@ -167,13 +167,17 @@ class SessionManager:
         """Generate session title from first user message."""
         return first_message[:_MAX_TITLE_LEN] if first_message else "Untitled Session"
 
-    def _estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
-        """Estimate token count using character heuristic."""
-        total = 0
-        for msg in messages:
-            content = msg.get("content") or ""
-            total += len(content) // 4
-        return total
+    def _estimate_tokens(self, messages: list[dict[str, Any]], model: str = "gpt-4") -> int:
+        """Estimate token count using litellm with character heuristic as fallback."""
+        try:
+            import litellm
+            return litellm.token_counter(model=model, messages=messages)
+        except Exception:
+            total = 0
+            for msg in messages:
+                content = msg.get("content") or ""
+                total += len(content) // 4
+            return total
 
     def _get_session_path(self, session_id: str) -> Path:
         """Get path for a legacy session file."""
@@ -427,21 +431,22 @@ class SessionManager:
             return self._list_json()
 
         query = "SELECT * FROM sessions WHERE 1=1"
-        params: tuple = ()
+        params: list = []
 
         if model:
             query += " AND model = ?"
-            params = (model,)
+            params.append(model)
         if is_compacted is not None:
             query += " AND is_compacted = ?"
-            params = (model, is_compacted) if model else (is_compacted,)
+            params.append(is_compacted)
 
         query += " ORDER BY updated_at DESC"
 
         if limit:
-            query += f" LIMIT {limit}"
+            query += " LIMIT ?"
+            params.append(limit)
 
-        rows = self._db.execute(query, params).fetchall()
+        rows = self._db.execute(query, tuple(params)).fetchall()
 
         return [
             {
@@ -518,9 +523,9 @@ class SessionManager:
         sessions = self.list()
         if len(sessions) <= self._session_cap:
             return
-        to_delete = sessions[self._session_cap:]
-        for session in to_delete:
-            self.delete(session["id"])
+        ids_to_delete = [s["id"] for s in sessions[self._session_cap:]]
+        for session_id in ids_to_delete:
+            self.delete(session_id)
 
     def compact(
         self,
@@ -557,11 +562,6 @@ class SessionManager:
             current_tokens -= msg_tokens
             other_messages.remove(msg)
 
-            self._db.execute(
-                "UPDATE messages SET is_deleted = TRUE WHERE id = ?",
-                (msg["id"],),
-            )
-
         compacted_messages = system_messages + other_messages
 
         session["messages"] = compacted_messages
@@ -573,19 +573,27 @@ class SessionManager:
 
         session["max_tokens_before_compact"] = max_tokens
 
-        self._db.execute(
-            """UPDATE sessions
-               SET token_count = ?, is_compacted = TRUE,
-                   original_token_count = ?, max_tokens_before_compact = ?
-               WHERE id = ?""",
-            (
-                current_tokens,
-                session.get("original_token_count"),
-                max_tokens,
-                session_id,
-            ),
-        )
-        self._db.commit()
+        deleted_ids = {m["id"] for m in messages if m not in compacted_messages}
+
+        with self._db.transaction():
+            for msg_id in deleted_ids:
+                self._db.execute(
+                    "UPDATE messages SET is_deleted = TRUE WHERE id = ?",
+                    (msg_id,),
+                )
+
+            self._db.execute(
+                """UPDATE sessions
+                   SET token_count = ?, is_compacted = TRUE,
+                       original_token_count = ?, max_tokens_before_compact = ?
+                   WHERE id = ?""",
+                (
+                    current_tokens,
+                    session.get("original_token_count"),
+                    max_tokens,
+                    session_id,
+                ),
+            )
 
         return session
 

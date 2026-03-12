@@ -57,7 +57,7 @@ class WorkflowExecutor:
                 output="\n".join(str(o) for o in outputs if o)
             )
         finally:
-            if skill:
+            if skill and self._current_skill_context is not None:
                 self.agent.conversation.remove_message(self._current_skill_context)
                 self._current_skill_context = None
 

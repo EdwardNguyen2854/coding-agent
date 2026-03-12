@@ -55,7 +55,7 @@ class ConversationManager:
         """
         message: dict[str, Any] = {
             "role": "assistant",
-            "content": content or None,
+            "content": content,
             "tool_calls": [
                 {
                     "id": tc["id"],
@@ -197,8 +197,9 @@ class ConversationManager:
         try:
             # Try to use litellm's token counter for accuracy
             return litellm.token_counter(model=self._model, messages=self._messages)
-        except Exception:
+        except Exception as e:
             # Fallback to character heuristic if litellm unavailable
+            _log.debug("litellm token_counter failed, using heuristic: %s", e)
             return self._estimate_tokens_heuristic()
 
     def _estimate_tokens_heuristic(self) -> int:
@@ -215,6 +216,22 @@ class ConversationManager:
             if m.get("tool_calls"):
                 total += _TOOL_CALL_TOKEN_OVERHEAD
         return total
+
+    def remove_message(self, content: str) -> bool:
+        """Remove the first message matching the given content.
+
+        Args:
+            content: The content to match against
+
+        Returns:
+            True if a message was found and removed, False otherwise.
+        """
+        for i, msg in enumerate(self._messages):
+            if msg.get("content") == content:
+                del self._messages[i]
+                self._invalidate_cache()
+                return True
+        return False
 
     def clear(self) -> None:
         """Clear all non-system messages (called on session end)."""
