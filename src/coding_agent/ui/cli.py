@@ -495,6 +495,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         branch=branch_name,
         context_limit=128000,
         get_active_sub_agent=get_active_sub_agent_name,
+        get_model=lambda: llm_client.model if llm_client else None,
     )
 
     from coding_agent.ui.interrupt import get_interrupt_handler, trigger_interrupt

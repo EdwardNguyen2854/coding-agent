@@ -174,10 +174,11 @@ class TestRenderBanner:
 
         renderer.render_banner("1.0.0")
 
-        mock_console.print.assert_called_once()
-        call_arg = mock_console.print.call_args.args[0]
-        # Banner may be Panel or Rule in current implementation - check it's a Panel
-        assert hasattr(call_arg, 'renderable') or hasattr(call_arg, 'title')
+        # Banner prints the panel + a hint line
+        assert mock_console.print.call_count == 2
+        first_call_arg = mock_console.print.call_args_list[0].args[0]
+        # First call should be the Panel
+        assert hasattr(first_call_arg, 'renderable') or hasattr(first_call_arg, 'title')
 
 
 class TestRenderConfig:
