@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from coding_agent.ui.sidebar import make_toolbar
+from coding_agent.ui.sidebar import _make_context_bar, make_toolbar
 from coding_agent.workflow import WorkflowState
 
 
@@ -31,6 +31,40 @@ def mock_workflow():
     wf.state = WorkflowState.IDLE
     wf.todo_list.total = 0
     return wf
+
+
+class TestContextBar:
+    def test_empty_at_zero_percent(self):
+        bar = _make_context_bar(0, width=8)
+        assert bar == "░░░░░░░░"
+
+    def test_full_at_100_percent(self):
+        bar = _make_context_bar(100, width=8)
+        assert bar == "▓▓▓▓▓▓▓▓"
+
+    def test_half_at_50_percent(self):
+        bar = _make_context_bar(50, width=8)
+        assert bar == "▓▓▓▓░░░░"
+
+    def test_width_matches_parameter(self):
+        bar = _make_context_bar(50, width=10)
+        assert len(bar) == 10
+
+    def test_does_not_exceed_width_at_100(self):
+        bar = _make_context_bar(100, width=6)
+        assert len(bar) == 6
+        assert "░" not in bar
+
+    def test_bar_appears_in_toolbar(self):
+        conv = MagicMock()
+        conv.token_count = 64000  # 50% of 128000
+        wf = MagicMock()
+        wf.state = WorkflowState.IDLE
+        wf.todo_list.total = 0
+        toolbar = make_toolbar(conv, wf, branch="main", context_limit=128000)
+        text = _text(toolbar())
+        # Bar characters should appear somewhere in the toolbar
+        assert "▓" in text or "░" in text
 
 
 class TestToolbarWithoutSubAgent:

@@ -1,8 +1,11 @@
 """Rich terminal output helpers for the CLI."""
 
 import difflib
+import time
 
 _LIVE_REFRESH_HZ = 8
+_SPINNER_REFRESH_HZ = 4
+_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 _MAX_DIFF_LINES = 80
 _MAX_ARG_DISPLAY = 80
 _SHORT_SESSION_ID_LEN = 12
@@ -166,6 +169,64 @@ class BufferedMarkdownDisplay:
         return self._text
 
 
+class _TimedSpinnerRenderable:
+    """Renderable that shows an animated spinner with live elapsed time.
+
+    Designed for use inside a ``Rich Live`` context.  On every refresh tick the
+    spinner frame advances and the elapsed time is updated, giving the user
+    real-time feedback during long-running tool calls.
+    """
+
+    def __init__(self, message: str) -> None:
+        self._message = message
+        self._start = time.monotonic()
+
+    def __rich_console__(self, console, options):
+        elapsed = time.monotonic() - self._start
+        frame = _SPINNER_FRAMES[int(elapsed * 10) % len(_SPINNER_FRAMES)]
+        yield Text.assemble(
+            (frame, "dim #818CF8"),
+            (f" {self._message}", "dim"),
+            (f"  {elapsed:.1f}s", "dim"),
+        )
+
+
+class TimedSpinner:
+    """Context manager that shows a spinner with live-updating elapsed time.
+
+    On interactive terminals, a ``Rich Live`` display refreshes the spinner
+    frame and elapsed seconds in real-time.  On non-interactive terminals
+    (piped output) the context manager is a no-op so callers need not
+    special-case it.
+
+    Usage::
+
+        with renderer.status_spinner("Running tests..."):
+            run_tests()
+    """
+
+    def __init__(self, console: Console, message: str) -> None:
+        self._console = console
+        self._message = message
+        self._live: "Live | None" = None
+
+    def __enter__(self) -> "TimedSpinner":
+        if getattr(self._console, "is_terminal", False):
+            self._live = Live(
+                _TimedSpinnerRenderable(self._message),
+                console=self._console,
+                refresh_per_second=_SPINNER_REFRESH_HZ,
+                transient=True,
+            )
+            self._live.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self._live is not None:
+            self._live.__exit__(exc_type, exc_val, exc_tb)
+            self._live = None
+
+
 class Renderer:
     """Render markdown and styled status/error output in terminal."""
 
@@ -215,16 +276,20 @@ class Renderer:
         """Print a styled success message."""
         self.console.print(f"[green]{message}[/green]", highlight=False)
 
-    def status_spinner(self, message: str) -> "Status":
-        """Return a spinner context manager for status display.
+    def status_spinner(self, message: str) -> "TimedSpinner":
+        """Return a spinner context manager with live elapsed time.
+
+        On interactive terminals the spinner updates in real-time, showing both
+        the message and elapsed seconds.  On non-interactive terminals it is a
+        silent no-op.
 
         Args:
-            message: Status message to display.
+            message: Status message to display next to the spinner.
 
         Returns:
-            A Rich Status spinner.
+            A :class:`TimedSpinner` context manager.
         """
-        return self.console.status(message, spinner="dots", spinner_style="dim #818CF8")
+        return TimedSpinner(self.console, message)
 
     def render_separator(self) -> None:
         """Render a dim horizontal rule as a separator."""
@@ -310,7 +375,7 @@ class Renderer:
             tool_name: Name of the tool being executed
             tool_args: Dictionary of tool arguments
         """
-        self.console.print(f"[#818CF8]{tool_name}[/#818CF8]", highlight=False)
+        self.console.print(f"[dim]→[/dim] [#818CF8]{tool_name}[/#818CF8]", highlight=False)
         for key, value in tool_args.items():
             value_str = str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
             if len(value_str) > _MAX_ARG_DISPLAY:

@@ -8,7 +8,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
 
-from coding_agent.ui.renderer import BufferedMarkdownDisplay, PlainStreamingDisplay, Renderer, StreamingDisplay
+from coding_agent.ui.renderer import BufferedMarkdownDisplay, PlainStreamingDisplay, Renderer, StreamingDisplay, TimedSpinner
 
 
 class TestRenderer:
@@ -64,37 +64,27 @@ class TestRenderer:
         mock_console.print.assert_called_once_with("[dim]Connected[/dim]", highlight=False)
 
     @patch("coding_agent.ui.renderer.Console")
-    def test_status_spinner_returns_console_status_context(self, mock_console_cls):
-        """status_spinner() returns the console.status() context manager."""
+    def test_status_spinner_returns_timed_spinner(self, mock_console_cls):
+        """status_spinner() returns a TimedSpinner context manager."""
         mock_console = MagicMock()
-        mock_status_cm = MagicMock()
-        mock_console.status.return_value = mock_status_cm
         mock_console_cls.return_value = mock_console
         renderer = Renderer()
 
-        status_cm = renderer.status_spinner("Thinking...")
+        result = renderer.status_spinner("Thinking...")
 
-        assert status_cm is mock_status_cm
-        # Check that status was called with the message (may have additional kwargs)
-        mock_console.status.assert_called()
-        call_args = mock_console.status.call_args
-        assert call_args[0][0] == "Thinking..."
+        assert isinstance(result, TimedSpinner)
 
     @patch("coding_agent.ui.renderer.Console")
     def test_status_spinner_cleans_up_on_exception(self, mock_console_cls):
-        """Spinner context manager exits when an exception is raised."""
+        """TimedSpinner context manager propagates exceptions cleanly."""
         mock_console = MagicMock()
-        mock_status_cm = MagicMock()
-        mock_console.status.return_value = mock_status_cm
+        mock_console.is_terminal = False  # avoid Rich Live in tests
         mock_console_cls.return_value = mock_console
         renderer = Renderer()
 
         with pytest.raises(RuntimeError):
             with renderer.status_spinner("Executing tool..."):
                 raise RuntimeError("failure")
-
-        mock_status_cm.__enter__.assert_called_once()
-        mock_status_cm.__exit__.assert_called_once()
 
 
 class TestRenderStatusLine:
@@ -315,9 +305,10 @@ class TestRenderToolPanel:
 
         # 1 line for tool name + 1 line per argument
         assert mock_console.print.call_count == 1 + len(tool_args)
-        # First call contains the tool name
+        # First call contains the tool name and arrow prefix
         first_call_arg = mock_console.print.call_args_list[0].args[0]
         assert "file_write" in first_call_arg
+        assert "→" in first_call_arg
 
     @patch("coding_agent.ui.renderer.Console")
     def test_render_tool_panel_empty_args(self, mock_console_cls):
@@ -360,3 +351,39 @@ class TestRenderDiffPreview:
         renderer.render_diff_preview("", "new content")
 
         assert mock_console.print.call_count == 1
+
+
+class TestTimedSpinner:
+    """Verify TimedSpinner context manager behaviour."""
+
+    def test_is_noop_on_non_terminal(self):
+        """TimedSpinner does not create a Live context on non-terminal consoles."""
+        mock_console = MagicMock()
+        mock_console.is_terminal = False
+        spinner = TimedSpinner(mock_console, "Running...")
+
+        with spinner:
+            pass  # should not raise
+
+        assert spinner._live is None
+
+    def test_propagates_exception(self):
+        """Exceptions raised inside the context are not swallowed."""
+        mock_console = MagicMock()
+        mock_console.is_terminal = False
+        spinner = TimedSpinner(mock_console, "Running...")
+
+        with pytest.raises(ValueError):
+            with spinner:
+                raise ValueError("boom")
+
+    def test_live_is_none_after_exit(self):
+        """_live is cleaned up to None after the context exits."""
+        mock_console = MagicMock()
+        mock_console.is_terminal = False
+        spinner = TimedSpinner(mock_console, "Running...")
+
+        with spinner:
+            pass
+
+        assert spinner._live is None
