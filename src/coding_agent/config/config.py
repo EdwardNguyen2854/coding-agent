@@ -171,6 +171,34 @@ class AgentConfig(BaseModel):
     # Context management
     max_context_tokens: int = 128000
 
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, v: float) -> float:
+        if not 0.0 <= v <= 2.0:
+            raise ValueError(f"temperature must be in [0.0, 2.0], got {v}")
+        return v
+
+    @field_validator("top_p")
+    @classmethod
+    def validate_top_p(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"top_p must be in [0.0, 1.0], got {v}")
+        return v
+
+    @field_validator("max_output_tokens")
+    @classmethod
+    def validate_max_output_tokens(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError(f"max_output_tokens must be > 0, got {v}")
+        return v
+
+    @field_validator("max_context_tokens")
+    @classmethod
+    def validate_max_context_tokens(cls, v: int) -> int:
+        if v <= 0:
+            raise ValueError(f"max_context_tokens must be > 0, got {v}")
+        return v
+
     # Skills configuration
     skills: SkillsConfig = SkillsConfig()
 

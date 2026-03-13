@@ -4,7 +4,14 @@ import json
 import logging
 import os
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from coding_agent.config.config import AgentConfig
+    from coding_agent.core.conversation import ConversationManager
+    from coding_agent.core.llm import LLMClient
+    from coding_agent.state.session import SessionManager
+    from coding_agent.ui.renderer import Renderer
 
 from coding_agent.ui.interrupt import is_interrupted
 from coding_agent.ui.output import ToolOutputFormatter
@@ -19,7 +26,7 @@ from coding_agent.config.utils import truncate_output
 class Agent:
     """ReAct agent that orchestrates LLM calls and tool execution."""
 
-    def __init__(self, llm_client, conversation, renderer, session_manager=None, session_data=None, config=None, workspace_root: str | None = None) -> None:
+    def __init__(self, llm_client: "LLMClient", conversation: "ConversationManager", renderer: "Renderer", session_manager: "SessionManager | None" = None, session_data: dict[str, Any] | None = None, config: "AgentConfig | None" = None, workspace_root: str | None = None) -> None:
         """Initialize the agent.
 
         Args:

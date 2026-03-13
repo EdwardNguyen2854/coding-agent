@@ -1,6 +1,7 @@
 """Spawn sub-agent tool — delegates a focused task to a specialized sub-agent."""
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from coding_agent.core.tool_result import ToolResult
@@ -35,69 +36,106 @@ SCHEMA = {
     "required": ["name", "role", "task"],
 }
 
-# Module-level state — populated by setup_spawn_sub_agent() and update_session_data()
-_llm_client = None
-_session_manager = None
-_session_data: dict[str, Any] | None = None
-_config = None
-_workspace_root: str | None = None
-_renderer = None
-_team_mode: bool = False
-_active_sub_agent_name: str | None = None  # set while a sub-agent is running
+
+@dataclass
+class SubAgentContext:
+    """Runtime dependencies for the spawn_sub_agent tool.
+
+    Collected into a single object so callers inject one argument instead of
+    eight module-level globals.  Thread-safety note: mutations to this object
+    (e.g. session_data updates) must not race with concurrent tool invocations;
+    the caller is responsible for synchronisation if sub-agents run in parallel.
+    """
+
+    llm_client: Any = None
+    session_manager: Any = None
+    session_data: dict[str, Any] | None = None
+    config: Any = None
+    workspace_root: str | None = None
+    renderer: Any = None
+    team_mode: bool = False
+    active_sub_agent_name: str | None = None
+
+
+# Single module-level context object — replaces eight individual globals.
+_context = SubAgentContext()
 
 
 def get_active_sub_agent_name() -> str | None:
     """Return the name of the currently running sub-agent, or None."""
-    return _active_sub_agent_name
+    return _context.active_sub_agent_name
 
 
 def setup_spawn_sub_agent(llm_client, session_manager, config, workspace_root, renderer) -> None:
     """Initialize the spawn_sub_agent tool with runtime dependencies."""
-    global _llm_client, _session_manager, _config, _workspace_root, _renderer
-    _llm_client = llm_client
-    _session_manager = session_manager
-    _config = config
-    _workspace_root = workspace_root
-    _renderer = renderer
+    _context.llm_client = llm_client
+    _context.session_manager = session_manager
+    _context.config = config
+    _context.workspace_root = workspace_root
+    _context.renderer = renderer
 
 
 def update_session_data(session_data: dict[str, Any] | None) -> None:
     """Update the current session data reference (called after session creation)."""
-    global _session_data
-    _session_data = session_data
+    _context.session_data = session_data
 
 
 def set_team_mode(enabled: bool) -> None:
     """Enable or disable team mode."""
-    global _team_mode
-    _team_mode = enabled
+    _context.team_mode = enabled
 
 
 def is_team_mode() -> bool:
     """Return True if team mode is active."""
-    return _team_mode
+    return _context.team_mode
 
 
 class SpawnSubAgentTool:
     name = "spawn_sub_agent"
 
+    def __init__(self, context: SubAgentContext | None = None) -> None:
+        """Initialise the tool.
+
+        Args:
+            context: Dependency context.  When *None* the module-level
+                     ``_context`` singleton is used (backward-compatible default).
+        """
+        self._ctx = context if context is not None else _context
+
     def schema(self) -> dict[str, Any]:
         return SCHEMA
 
     def run(self, args: dict[str, Any]) -> ToolResult:
-        if not _team_mode:
+        """Delegate a task to a named sub-agent and return its result.
+
+        Creates (or reuses) a sub-agent with the given ``name`` and ``role``,
+        runs the ``task``, persists the sub-agent conversation to the session
+        DB, and returns the textual result.
+
+        Error recovery: any exception raised by the sub-agent's ``run()`` is
+        caught and returned as a ``SUB_AGENT_ERROR`` failure so the parent
+        agent can decide whether to retry or surface the error to the user.
+
+        Args:
+            args: Tool arguments — ``name``, ``role``, ``task``, optional ``context``.
+
+        Returns:
+            ToolResult with ``data["sub_agent"]`` and ``data["result"]`` on success.
+        """
+        ctx = self._ctx
+        if not ctx.team_mode:
             return ToolResult.failure(
                 "TEAM_MODE_DISABLED",
                 "spawn_sub_agent is only available in team mode. Enable it with: /agent team-mode on",
             )
 
-        if _llm_client is None or _session_manager is None:
+        if ctx.llm_client is None or ctx.session_manager is None:
             return ToolResult.failure(
                 "NOT_INITIALIZED",
                 "spawn_sub_agent tool is not properly initialized.",
             )
 
-        if _session_data is None:
+        if ctx.session_data is None:
             return ToolResult.failure(
                 "NO_SESSION",
                 "No active session. Send a message first to create a session.",
@@ -108,18 +146,18 @@ class SpawnSubAgentTool:
         task: str = args["task"]
         context: str = args.get("context", "")
 
-        session_id = _session_data["id"]
+        session_id = ctx.session_data["id"]
 
         # Reuse existing sub-agent or create a new one
-        sub_agent = _session_manager.get_sub_agent_by_name(session_id, name)
+        sub_agent = ctx.session_manager.get_sub_agent_by_name(session_id, name)
         if sub_agent is None:
-            sub_agent = _session_manager.add_sub_agent(session_id, name, role)
+            sub_agent = ctx.session_manager.add_sub_agent(session_id, name, role)
 
         sub_agent_id = sub_agent["id"]
 
         # Build a fresh conversation for the sub-agent
         from coding_agent.core.conversation import ConversationManager
-        model = _config.model if _config else "gpt-4"
+        model = ctx.config.model if ctx.config else "gpt-4"
         sub_conversation = ConversationManager(system_prompt=role, model=model)
 
         if context:
@@ -127,37 +165,36 @@ class SpawnSubAgentTool:
             sub_conversation.add_message("assistant", "Understood. I have the context. What would you like me to do?")
 
         # Visual separator
-        if _renderer:
-            _renderer.print_info(f"--- Sub-agent: {name} [{role}] ---")
+        if ctx.renderer:
+            ctx.renderer.print_info(f"--- Sub-agent: {name} [{role}] ---")
 
         # Create and run the sub-agent (reuses the global tool_registry — no re-registration needed)
         from coding_agent.core.agent import Agent
         sub_agent_instance = Agent(
-            llm_client=_llm_client,
+            llm_client=ctx.llm_client,
             conversation=sub_conversation,
-            renderer=_renderer,
-            config=_config,
-            workspace_root=_workspace_root,
+            renderer=ctx.renderer,
+            config=ctx.config,
+            workspace_root=ctx.workspace_root,
         )
 
-        global _active_sub_agent_name
-        _active_sub_agent_name = name
+        ctx.active_sub_agent_name = name
         try:
             result = sub_agent_instance.run(task)
         except Exception as exc:
-            _active_sub_agent_name = None
-            if _renderer:
-                _renderer.print_error(f"--- Sub-agent {name} failed ---")
+            ctx.active_sub_agent_name = None
+            if ctx.renderer:
+                ctx.renderer.print_error(f"--- Sub-agent {name} failed ---")
             return ToolResult.failure("SUB_AGENT_ERROR", f"Sub-agent '{name}' encountered an error: {exc}")
         finally:
-            _active_sub_agent_name = None
+            ctx.active_sub_agent_name = None
 
         # Print result summary
-        if _renderer and result:
+        if ctx.renderer and result:
             from rich.panel import Panel
             from rich.text import Text
             summary_text = result[:400] + ("…" if len(result) > 400 else "")
-            _renderer.console.print(
+            ctx.renderer.console.print(
                 Panel(
                     Text(summary_text),
                     title=f"[bold cyan]Sub-agent: {name}[/] — done",
@@ -165,15 +202,15 @@ class SpawnSubAgentTool:
                     expand=False,
                 )
             )
-        elif _renderer:
-            _renderer.print_info(f"--- Sub-agent {name} done (no output) ---")
+        elif ctx.renderer:
+            ctx.renderer.print_info(f"--- Sub-agent {name} done (no output) ---")
 
         # Persist sub-agent messages to DB
         sub_messages = sub_conversation.get_messages()
         # Skip the system prompt (first message) when saving — it's the role definition
         new_messages = sub_messages[1:] if len(sub_messages) > 1 else []
         if new_messages:
-            _session_manager.save(_session_data, new_messages=new_messages, sub_agent_id=sub_agent_id)
+            ctx.session_manager.save(ctx.session_data, new_messages=new_messages, sub_agent_id=sub_agent_id)
 
         return ToolResult.success(
             data={"sub_agent": name, "result": result},

@@ -18,16 +18,16 @@ def _fmt_params(params: dict) -> str:
 
 
 DESTRUCTIVE_PATTERNS = [
-    r"rm\s+-rf\s+",
-    r"rm\s+-r\s+",
-    r"rmdir\s+/s\s+/q",
-    r"del\s+/s\s+/q",
-    r"rd\s+/s\s+/q",
-    r"format\s+",
-    r"mkfs",
-    r"shred",
-    r">\s*/dev/",
-    r"dd\s+if=",
+    r"\brm\s+(-\w*r\w*f|-\w*f\w*r)\b",  # rm -rf, rm -fr and variants
+    r"\brm\s+-r\b",                        # rm -r (recursive without force)
+    r"\brmdir\b.*(/s|/q)",                 # Windows rmdir /s or /q (any order)
+    r"\bdel\b.*(/s|/q)",                   # Windows del /s or /q (any order)
+    r"\brd\b.*(/s|/q)",                    # Windows rd /s or /q (any order)
+    r"\bformat\b\s+\w",                    # format <drive>
+    r"\bmkfs\b",                           # mkfs (create filesystem)
+    r"\bshred\b",                          # shred (secure delete)
+    r">\s*/dev/(?!null\b|zero\b)",         # redirect to /dev/ except /dev/null, /dev/zero
+    r"\bdd\b.*\bif=",                      # dd if= (disk duplicate)
 ]
 
 TOOLS_REQUIRING_APPROVAL = {"file_write", "file_edit", "shell"}

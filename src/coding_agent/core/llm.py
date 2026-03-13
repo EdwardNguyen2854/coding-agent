@@ -1,10 +1,13 @@
 """LiteLLM client wrapper - connectivity verification and LLM communication."""
 
 import json
+import logging
 from collections.abc import Generator
 from dataclasses import dataclass, field
 
 import litellm
+
+_log = logging.getLogger(__name__)
 
 
 class ModelRejectionError(ConnectionError):
@@ -242,7 +245,8 @@ def detect_model_capabilities(client: "LLMClient") -> ModelCapabilities:
         caps = ModelCapabilities(temperature_supported=True, top_p_supported=True)
     except litellm.BadRequestError:
         caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
-    except Exception:
+    except Exception as e:
+        _log.debug("Unexpected error detecting model capabilities for %r, assuming unsupported: %s", model, e)
         caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
 
     set_model_capabilities(model, caps)

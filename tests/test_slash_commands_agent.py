@@ -13,9 +13,9 @@ from coding_agent.state.session import SessionManager
 @pytest.fixture(autouse=True)
 def reset_team_mode():
     """Ensure team mode is off before each test."""
-    ssa_module._team_mode = False
+    ssa_module._context.team_mode = False
     yield
-    ssa_module._team_mode = False
+    ssa_module._context.team_mode = False
 
 
 @pytest.fixture

@@ -20,19 +20,19 @@ from coding_agent.state.session import SessionManager
 
 @pytest.fixture(autouse=True)
 def reset_module_state():
-    """Reset all module-level globals before each test."""
-    ssa_module._llm_client = None
-    ssa_module._session_manager = None
-    ssa_module._session_data = None
-    ssa_module._config = None
-    ssa_module._workspace_root = None
-    ssa_module._renderer = None
-    ssa_module._team_mode = False
-    ssa_module._active_sub_agent_name = None
+    """Reset all module-level context before each test."""
+    ssa_module._context.llm_client = None
+    ssa_module._context.session_manager = None
+    ssa_module._context.session_data = None
+    ssa_module._context.config = None
+    ssa_module._context.workspace_root = None
+    ssa_module._context.renderer = None
+    ssa_module._context.team_mode = False
+    ssa_module._context.active_sub_agent_name = None
     yield
     # Cleanup after test
-    ssa_module._team_mode = False
-    ssa_module._active_sub_agent_name = None
+    ssa_module._context.team_mode = False
+    ssa_module._context.active_sub_agent_name = None
 
 
 @pytest.fixture
