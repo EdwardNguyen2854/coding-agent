@@ -1,10 +1,17 @@
 """LiteLLM client wrapper - connectivity verification and LLM communication."""
 
 import json
+import logging
 from collections.abc import Generator
 from dataclasses import dataclass, field
 
 import litellm
+
+_log = logging.getLogger(__name__)
+
+
+class ModelRejectionError(ConnectionError):
+    """Raised when the model rejects the request, e.g. due to unsupported tool format."""
 
 from coding_agent.config.config import AgentConfig, ModelCapabilities, get_model_capabilities, is_ollama_model, set_model_capabilities
 from coding_agent.tools import get_openai_tools
@@ -107,7 +114,7 @@ class LLMClient:
                 f"Check your LiteLLM server configuration and logs."
             ) from None
         if isinstance(error, litellm.BadRequestError):
-            raise ConnectionError(
+            raise ModelRejectionError(
                 f"Model rejected the request.\n\n"
                 f"  Server: {self.api_base}\n"
                 f"  Error: {error}\n\n"
@@ -238,7 +245,8 @@ def detect_model_capabilities(client: "LLMClient") -> ModelCapabilities:
         caps = ModelCapabilities(temperature_supported=True, top_p_supported=True)
     except litellm.BadRequestError:
         caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
-    except Exception:
+    except Exception as e:
+        _log.debug("Unexpected error detecting model capabilities for %r, assuming unsupported: %s", model, e)
         caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
 
     set_model_capabilities(model, caps)

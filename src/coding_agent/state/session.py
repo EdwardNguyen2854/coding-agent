@@ -18,6 +18,7 @@ DEFAULT_SESSIONS_DIR = Path.home() / ".coding-agent" / "sessions"
 DEFAULT_DB_PATH = Path.home() / ".coding-agent" / "sessions.db"
 DEFAULT_SESSION_CAP = 50
 _MAX_TITLE_LEN = 80
+_CHARS_PER_TOKEN = 4  # rough heuristic: ~4 ASCII chars per token
 
 
 class SessionManager:
@@ -101,52 +102,51 @@ class SessionManager:
             _log.info("No JSON session files found, skipping migration")
             return stats
 
-        for json_file in json_files:
-            try:
-                data = json.loads(json_file.read_text(encoding="utf-8"))
-                session_id = data.get("id", json_file.stem)
-                messages = data.get("messages", [])
+        with self._db.transaction():
+            for json_file in json_files:
+                try:
+                    data = json.loads(json_file.read_text(encoding="utf-8"))
+                    session_id = data.get("id", json_file.stem)
+                    messages = data.get("messages", [])
 
-                now = datetime.now(timezone.utc).isoformat()
-                self._db.execute(
-                    """INSERT OR REPLACE INTO sessions
-                       (id, title, model, created_at, updated_at, token_count, is_compacted)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                    (
-                        session_id,
-                        data.get("title", "Untitled"),
-                        data.get("model", "unknown"),
-                        data.get("created_at", now),
-                        data.get("updated_at", now),
-                        data.get("token_count", 0),
-                        False,
-                    ),
-                )
-
-                for msg in messages:
-                    content = msg.get("content", "")
-                    if content is None:
-                        content = ""
+                    now = datetime.now(timezone.utc).isoformat()
                     self._db.execute(
-                        """INSERT INTO messages
-                           (session_id, role, content, token_count, created_at)
-                           VALUES (?, ?, ?, ?, ?)""",
+                        """INSERT OR REPLACE INTO sessions
+                           (id, title, model, created_at, updated_at, token_count, is_compacted)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         (
                             session_id,
-                            msg.get("role", "user"),
-                            content,
-                            self._estimate_tokens([msg]),
-                            now,
+                            data.get("title", "Untitled"),
+                            data.get("model", "unknown"),
+                            data.get("created_at", now),
+                            data.get("updated_at", now),
+                            data.get("token_count", 0),
+                            False,
                         ),
                     )
-                    stats["messages_migrated"] += 1
 
-                stats["sessions_migrated"] += 1
-            except (json.JSONDecodeError, KeyError) as e:
-                _log.warning("Failed to migrate session %s: %s", json_file.name, e)
-                continue
+                    for msg in messages:
+                        content = msg.get("content", "")
+                        if content is None:
+                            content = ""
+                        self._db.execute(
+                            """INSERT INTO messages
+                               (session_id, role, content, token_count, created_at)
+                               VALUES (?, ?, ?, ?, ?)""",
+                            (
+                                session_id,
+                                msg.get("role", "user"),
+                                content,
+                                self._estimate_tokens([msg]),
+                                now,
+                            ),
+                        )
+                        stats["messages_migrated"] += 1
 
-        self._db.commit()
+                    stats["sessions_migrated"] += 1
+                except (json.JSONDecodeError, KeyError) as e:
+                    _log.warning("Failed to migrate session %s: %s", json_file.name, e)
+                    continue
 
         backup_dir = sessions_dir.with_name(sessions_dir.name + ".backup")
         sessions_dir.rename(backup_dir)
@@ -172,11 +172,12 @@ class SessionManager:
         try:
             import litellm
             return litellm.token_counter(model=model, messages=messages)
-        except Exception:
+        except Exception as e:
+            _log.debug("litellm token_counter failed, using heuristic: %s", e)
             total = 0
             for msg in messages:
                 content = msg.get("content") or ""
-                total += len(content) // 4
+                total += len(content) // _CHARS_PER_TOKEN
             return total
 
     def _get_session_path(self, session_id: str) -> Path:

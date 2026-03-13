@@ -11,6 +11,7 @@ _log = logging.getLogger(__name__)
 _MAX_TOOL_OUTPUT_CHARS = 1000
 _MAX_TOOL_RESULT_PREVIEW = 300
 _TOOL_CALL_TOKEN_OVERHEAD = 50
+_CHARS_PER_TOKEN = 4  # rough heuristic: ~4 ASCII chars per token
 
 
 class ConversationManager:
@@ -157,7 +158,16 @@ class ConversationManager:
             if msg.get("role") == "tool":
                 content = msg.get("content", "")
                 if content and len(content) > _MAX_TOOL_OUTPUT_CHARS:
-                    msg["content"] = content[:_MAX_TOOL_OUTPUT_CHARS] + "\n...[truncated]"
+                    truncated = content[:_MAX_TOOL_OUTPUT_CHARS]
+                    # Avoid splitting in the middle of a JSON structure — look for a
+                    # safe boundary (last newline or comma) within the last 20% of the
+                    # kept portion so the model sees a valid partial response.
+                    for sep in ("\n", ",", " "):
+                        boundary = truncated.rfind(sep, len(truncated) // 2)
+                        if boundary != -1:
+                            truncated = truncated[:boundary]
+                            break
+                    msg["content"] = truncated + "\n...[truncated]"
                     return True
         return False
 
@@ -203,7 +213,11 @@ class ConversationManager:
             return self._estimate_tokens_heuristic()
 
     def _estimate_tokens_heuristic(self) -> int:
-        """Estimate tokens using character heuristic (len/4).
+        """Estimate tokens using a character-count heuristic.
+
+        Uses ``_CHARS_PER_TOKEN`` (4) characters per token as a rough
+        approximation.  This underestimates for non-ASCII text (e.g. CJK or
+        emoji) and is only used when the litellm token counter is unavailable.
 
         Returns:
             Estimated token count
@@ -211,7 +225,7 @@ class ConversationManager:
         total = 0
         for m in self._messages:
             content = m.get("content") or ""
-            total += len(content) // 4
+            total += len(content) // _CHARS_PER_TOKEN
             # Add overhead for tool_calls
             if m.get("tool_calls"):
                 total += _TOOL_CALL_TOKEN_OVERHEAD

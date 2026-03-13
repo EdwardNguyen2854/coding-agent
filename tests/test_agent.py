@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from coding_agent.core.agent import Agent
+from coding_agent.core.llm import ModelRejectionError
 
 
 def _make_mock_display():
@@ -231,7 +232,7 @@ class TestAgentToolFallback:
         def stream_side_effect(messages, tools=None):
             call_count[0] += 1
             if call_count[0] == 1:
-                raise ConnectionError("Model rejected the request.")
+                raise ModelRejectionError("Model rejected the request.")
             mock_llm.last_response = plain_response
             return iter([])
 
