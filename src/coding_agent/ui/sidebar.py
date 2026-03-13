@@ -9,7 +9,7 @@ _CTX_WARNING = 70
 
 _WORKFLOW_STYLE_MAP = {
     WorkflowState.AWAITING_PLAN: "fg:ansiyellow",
-    WorkflowState.PLAN_CREATED: "fg:ansicyan",
+    WorkflowState.PLAN_CREATED: "fg:ansiblue",
     WorkflowState.AWAITING_APPROVAL: "fg:ansimagenta",
     WorkflowState.EXECUTING: "fg:ansigreen",
     WorkflowState.COMPLETED: "fg:ansigreen",
