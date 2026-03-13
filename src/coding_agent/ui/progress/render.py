@@ -69,15 +69,15 @@ class ProgressRenderer:
         return " ".join(parts)
 
     def _render_bar(self, percentage: int) -> str:
-        """Render a progress bar."""
-        bar_width = 20
+        """Render a progress bar sized to the terminal width."""
+        bar_width = max(10, min(40, self.term.width // 4))
         filled = int(bar_width * percentage / 100)
         bar = self.BAR_CHARS[0] * filled + self.BAR_CHARS[1] * (bar_width - filled)
         return f"[{bar}]"
 
     def _render_dots(self, percentage: int) -> str:
-        """Render progress as dots."""
-        num_dots = 10
+        """Render progress as dots sized to the terminal width."""
+        num_dots = max(5, min(20, self.term.width // 8))
         filled = int(num_dots * percentage / 100)
         dots = self.DOTS_CHARS[0] * filled + self.DOTS_CHARS[1] * (num_dots - filled)
         return f"[{dots}]"

@@ -97,7 +97,8 @@ def make_toolbar(
             if blocked_count:
                 summary += f"  ✗{blocked_count}"
             if in_progress:
-                label = in_progress.description[:30]
+                desc = in_progress.description
+                label = desc[:30] + "…" if len(desc) > 30 else desc
                 parts += [
                     ("", "  │  "),
                     ("", f"Todos: {summary}  ▶ {label}"),

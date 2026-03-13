@@ -1,5 +1,6 @@
 """Command system for CLI supporting multiple prefixes (/, @, #, !)."""
 
+import difflib
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -1582,7 +1583,15 @@ def execute_command(
     registry = _get_registry(prefix)
 
     if command_name not in registry:
-        renderer.print_error(f"Unknown command: {prefix.value}{command_name}. Type /help for available commands.")
+        suggestions = difflib.get_close_matches(command_name, registry.keys(), n=1, cutoff=0.6)
+        if suggestions:
+            renderer.print_error(
+                f"Unknown command: {prefix.value}{command_name}. Did you mean {prefix.value}{suggestions[0]}?"
+            )
+        else:
+            renderer.print_error(
+                f"Unknown command: {prefix.value}{command_name}. Type /help for available commands."
+            )
         return True
 
     cmd = registry[command_name]

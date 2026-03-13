@@ -14,9 +14,12 @@ class OutputFilter:
     patterns: list[str] = field(default_factory=list)
 
 
+_HISTORY_LIMIT = 200
+
+
 class OutputFilterManager:
     """Manages output filtering state."""
-    
+
     def __init__(self):
         self._filters: list[OutputFilter] = []
         self._history: list[dict] = []
@@ -58,6 +61,8 @@ class OutputFilterManager:
             "output": output,
             "full_output": full_output,
         })
+        if len(self._history) > _HISTORY_LIMIT:
+            self._history.pop(0)
         return output_id
     
     def get_full_output(self, output_id: str) -> str | None:
