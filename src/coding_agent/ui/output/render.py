@@ -46,12 +46,12 @@ def render_tool_header(
     """
     style = "green" if status == ToolStatus.SUCCESS else \
             "yellow" if status == ToolStatus.WARNING else \
-            "red" if status == ToolStatus.ERROR else "cyan"
-    
+            "red" if status == ToolStatus.ERROR else "#818CF8"
+
     parts = []
     if status_indicators:
         parts.append(f"[{style}]{status_indicator}[/{style}]")
-    parts.append(f"[cyan]{tool_name}[/cyan]")
+    parts.append(f"[#818CF8]{tool_name}[/#818CF8]")
     
     if show_timing and timing_ms is not None:
         timing_str = format_timing(timing_ms, timing_format)
