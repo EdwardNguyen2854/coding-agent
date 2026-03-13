@@ -4,6 +4,7 @@ from coding_agent.config.agent_persona import AgentPersona, AgentSystem
 from coding_agent.config.config import (
     AgentConfig,
     ConfigError,
+    ConfigNotFoundError,
     DEFAULT_CONFIG_DIR,
     DEFAULT_CONFIG_FILE,
     DEFAULT_DOCS_DIR,
@@ -12,8 +13,10 @@ from coding_agent.config.config import (
     SkillSetting,
     SkillsConfig,
     DEFAULT_SKILLS,
+    TEMPLATE_CONFIG,
     apply_cli_overrides,
     clear_runtime_config,
+    create_template_config,
     ensure_docs_installed,
     get_docs_dir,
     get_runtime_config,

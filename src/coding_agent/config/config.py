@@ -103,6 +103,10 @@ class ConfigError(Exception):
     """Raised when configuration is invalid or missing."""
 
 
+class ConfigNotFoundError(ConfigError):
+    """Raised when the configuration file does not exist."""
+
+
 class OutputConfig(BaseModel):
     """Tool output display configuration."""
     
@@ -248,7 +252,7 @@ def load_config(config_path: Path | None = None) -> AgentConfig:
     path = config_path or DEFAULT_CONFIG_FILE
 
     if not path.exists():
-        raise ConfigError(
+        raise ConfigNotFoundError(
             f"Configuration file not found.\n\n"
             f"Expected location: {path}\n\n"
             f"For LiteLLM proxy / OpenAI-compatible APIs:\n"
@@ -336,6 +340,51 @@ def apply_cli_overrides(
         raise ConfigError(
             f"Invalid CLI override:\n\n{error_text}"
         ) from None
+
+
+TEMPLATE_CONFIG = """\
+# Coding-Agent Configuration
+# Edit this file to configure your LLM endpoint, then re-run coding-agent.
+#
+# Documentation: https://github.com/anthropics/coding-agent
+
+# LLM model identifier (required)
+# Examples:
+#   litellm/gpt-4o              - OpenAI GPT-4o via LiteLLM proxy
+#   litellm/claude-sonnet-4-6   - Claude via LiteLLM proxy
+#   ollama_chat/llama3.2        - Local Ollama model
+model: {model}
+
+# API endpoint URL (required)
+# Examples:
+#   http://localhost:4000   - Local LiteLLM proxy
+#   http://localhost:11434  - Local Ollama
+api_base: {api_base}
+
+# Optional: API key (uncomment and set if required by your endpoint)
+# api_key: your-key-here
+
+# Optional settings (uncomment to override defaults):
+# temperature: 0.0       # Sampling temperature (0.0 - 2.0)
+# max_output_tokens: 4096
+# auto_allow: false      # Auto-approve all tool executions
+"""
+
+
+def create_template_config(
+    path: Path,
+    model: str = "litellm/gpt-4o",
+    api_base: str = "http://localhost:4000",
+) -> None:
+    """Write a template config.yaml to the given path.
+
+    Args:
+        path: Destination path for the config file.
+        model: LLM model identifier to use as the default.
+        api_base: API base URL to use as the default.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(TEMPLATE_CONFIG.format(model=model, api_base=api_base), encoding="utf-8")
 
 
 def ensure_docs_installed() -> None:

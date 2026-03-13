@@ -13,7 +13,9 @@ from coding_agent.config import (
     OLLAMA_DEFAULT_API_BASE,
     AgentConfig,
     ConfigError,
+    ConfigNotFoundError,
     apply_cli_overrides,
+    create_template_config,
     is_ollama_model,
     load_config,
 )
@@ -396,8 +398,8 @@ class TestCLIOverrides:
 class TestCLIIntegration:
     """Test CLI integration with config loading."""
 
-    def test_cli_missing_config_shows_error(self, tmp_path, monkeypatch):
-        """AC #1: CLI shows error with config path and required fields."""
+    def test_cli_missing_config_triggers_first_run_setup(self, tmp_path, monkeypatch):
+        """AC #1: Missing config triggers interactive first-run setup."""
         from click.testing import CliRunner
 
         from coding_agent.ui.cli import main
@@ -408,12 +410,12 @@ class TestCLIIntegration:
             fake_path,
         )
         runner = CliRunner()
-        result = runner.invoke(main, [])
-        assert result.exit_code != 0
+        # Provide model and api_base via stdin prompts, then EOF to exit
+        result = runner.invoke(main, [], input="litellm/gpt-4o\nhttp://localhost:4000\n")
         combined = result.output
+        assert "Welcome to Coding-Agent" in combined
         assert str(fake_path) in combined
-        assert "model" in combined
-        assert "api_base" in combined
+        assert fake_path.exists()
 
     @patch("coding_agent.ui.cli.PromptSession")
     @patch("coding_agent.ui.cli.LLMClient")
@@ -543,3 +545,104 @@ class TestCLIIntegration:
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert "sk-super-secret-key-12345" not in result.output
+
+
+class TestCreateTemplateConfig:
+    """Tests for create_template_config() and first-run setup."""
+
+    def test_creates_file_with_model_and_api_base(self, tmp_path):
+        """create_template_config writes a YAML file with the given model and api_base."""
+        import yaml as _yaml
+
+        dest = tmp_path / "config.yaml"
+        create_template_config(dest, model="ollama_chat/llama3.2", api_base="http://localhost:11434")
+
+        assert dest.exists()
+        data = _yaml.safe_load(dest.read_text())
+        assert data["model"] == "ollama_chat/llama3.2"
+        assert data["api_base"] == "http://localhost:11434"
+
+    def test_creates_parent_directories(self, tmp_path):
+        """create_template_config creates missing parent directories."""
+        dest = tmp_path / "nested" / "dir" / "config.yaml"
+        create_template_config(dest)
+        assert dest.exists()
+
+    def test_default_values(self, tmp_path):
+        """create_template_config uses sensible defaults when called without arguments."""
+        import yaml as _yaml
+
+        dest = tmp_path / "config.yaml"
+        create_template_config(dest)
+        data = _yaml.safe_load(dest.read_text())
+        assert data["model"] == "litellm/gpt-4o"
+        assert data["api_base"] == "http://localhost:4000"
+
+    def test_written_file_is_loadable(self, tmp_path):
+        """A file written by create_template_config can be loaded by load_config."""
+        dest = tmp_path / "config.yaml"
+        create_template_config(dest, model="litellm/gpt-4o", api_base="http://localhost:4000")
+        cfg = load_config(dest)
+        assert cfg.model == "litellm/gpt-4o"
+        assert cfg.api_base == "http://localhost:4000"
+
+    def test_load_config_raises_config_not_found_error(self, tmp_path):
+        """load_config raises ConfigNotFoundError (a subclass of ConfigError) for missing files."""
+        missing = tmp_path / "missing.yaml"
+        with pytest.raises(ConfigNotFoundError):
+            load_config(missing)
+        # Also verifiable via the parent class
+        with pytest.raises(ConfigError):
+            load_config(missing)
+
+    def test_first_run_setup_creates_config_and_starts(self, tmp_path, monkeypatch):
+        """Interactive first-run setup writes config.yaml and the agent starts."""
+        from unittest.mock import patch
+
+        from click.testing import CliRunner
+
+        from coding_agent.ui.cli import main
+
+        fake_path = tmp_path / "config.yaml"
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", fake_path)
+
+        with patch("coding_agent.ui.cli.LLMClient") as mock_llm, \
+             patch("coding_agent.ui.cli.PromptSession") as mock_session, \
+             patch("coding_agent.ui.cli.SessionManager"):
+            mock_session.return_value.prompt.side_effect = EOFError()
+            mock_llm.return_value.verify_connection.return_value = None
+
+            runner = CliRunner()
+            # Provide model then api_base via stdin, then EOF exits the REPL
+            result = runner.invoke(main, [], input="litellm/gpt-4o\nhttp://localhost:4000\n")
+
+        assert fake_path.exists(), "config.yaml should have been created"
+        assert "Welcome to Coding-Agent" in result.output
+        assert "Configuration saved" in result.output
+        assert result.exit_code == 0
+
+    def test_first_run_setup_uses_ollama_default_base_for_ollama_model(self, tmp_path, monkeypatch):
+        """When an ollama model is entered, the api_base default is the Ollama endpoint."""
+        from unittest.mock import patch
+
+        from click.testing import CliRunner
+
+        from coding_agent.ui.cli import main
+
+        fake_path = tmp_path / "config.yaml"
+        monkeypatch.setattr("coding_agent.config.config.DEFAULT_CONFIG_FILE", fake_path)
+
+        with patch("coding_agent.ui.cli.LLMClient") as mock_llm, \
+             patch("coding_agent.ui.cli.PromptSession") as mock_session, \
+             patch("coding_agent.ui.cli.SessionManager"):
+            mock_session.return_value.prompt.side_effect = EOFError()
+            mock_llm.return_value.verify_connection.return_value = None
+
+            runner = CliRunner()
+            # Enter ollama model then accept the default api_base with Enter
+            result = runner.invoke(main, [], input="ollama_chat/llama3.2\n\n")
+
+        import yaml as _yaml
+        data = _yaml.safe_load(fake_path.read_text())
+        assert data["model"] == "ollama_chat/llama3.2"
+        assert data["api_base"] == OLLAMA_DEFAULT_API_BASE
