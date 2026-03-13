@@ -10,6 +10,7 @@ from coding_agent.ui.interrupt import is_interrupted
 from coding_agent.ui.output import ToolOutputFormatter
 
 _log = logging.getLogger(__name__)
+from coding_agent.core.llm import ModelRejectionError
 from coding_agent.core.permissions import PermissionSystem
 from coding_agent.tools import execute_tool, get_openai_tools
 from coding_agent.config.utils import truncate_output
@@ -74,8 +75,8 @@ class Agent:
                         break
                     display.update(delta)
             return True
-        except ConnectionError as e:
-            if "rejected the request" in str(e) and self._has_tool_messages(messages):
+        except ModelRejectionError as e:
+            if self._has_tool_messages(messages):
                 self.renderer.print_info("  Retrying with simplified history (model lacks tool support)...")
                 simplified = self.conversation.get_messages_simplified()
                 try:
@@ -89,6 +90,9 @@ class Agent:
                 except Exception as retry_err:
                     self.renderer.print_error(f"Error: {str(retry_err)}")
                     return False
+            self.renderer.print_error(f"Error: {str(e)}")
+            return False
+        except ConnectionError as e:
             self.renderer.print_error(f"Error: {str(e)}")
             return False
 

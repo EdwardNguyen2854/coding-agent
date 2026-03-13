@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 
 import litellm
 
+
+class ModelRejectionError(ConnectionError):
+    """Raised when the model rejects the request, e.g. due to unsupported tool format."""
+
 from coding_agent.config.config import AgentConfig, ModelCapabilities, get_model_capabilities, is_ollama_model, set_model_capabilities
 from coding_agent.tools import get_openai_tools
 
@@ -107,7 +111,7 @@ class LLMClient:
                 f"Check your LiteLLM server configuration and logs."
             ) from None
         if isinstance(error, litellm.BadRequestError):
-            raise ConnectionError(
+            raise ModelRejectionError(
                 f"Model rejected the request.\n\n"
                 f"  Server: {self.api_base}\n"
                 f"  Error: {error}\n\n"
