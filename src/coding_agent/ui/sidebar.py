@@ -1,11 +1,14 @@
 """Bottom toolbar content for the prompt session."""
 
+import shutil
+
 from coding_agent.workflow import Workflow, WorkflowState
 
 
 DEFAULT_CONTEXT_LIMIT = 128000
 _CTX_CRITICAL = 90
 _CTX_WARNING = 70
+_CTX_BAR_WIDTH = 8
 
 _WORKFLOW_STYLE_MAP = {
     WorkflowState.AWAITING_PLAN: "fg:ansiyellow",
@@ -14,6 +17,20 @@ _WORKFLOW_STYLE_MAP = {
     WorkflowState.EXECUTING: "fg:ansigreen",
     WorkflowState.COMPLETED: "fg:ansigreen",
 }
+
+
+def _make_context_bar(percentage: float, width: int = _CTX_BAR_WIDTH) -> str:
+    """Create a visual fill bar for context usage.
+
+    Args:
+        percentage: Context usage as a percentage (0–100).
+        width: Total bar width in characters.
+
+    Returns:
+        A string of ``▓`` (filled) and ``░`` (empty) characters, e.g. ``▓▓▓▓░░░░``.
+    """
+    filled = min(width, round((percentage / 100) * width))
+    return "▓" * filled + "░" * (width - filled)
 
 
 def make_toolbar(
@@ -73,9 +90,10 @@ def make_toolbar(
                 ("", "  │  "),
             ]
 
+        ctx_bar = _make_context_bar(percentage)
         parts += [
             ("", f"Context: {token_count:,} "),
-            (ctx_style, f"({percentage:.1f}%)"),
+            (ctx_style, f"{ctx_bar} ({percentage:.1f}%)"),
             ("", "  │  "),
             ("", f"Branch: {branch}"),
         ]
