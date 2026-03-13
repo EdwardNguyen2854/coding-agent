@@ -77,8 +77,8 @@ def get_checkpoint_manager() -> CheckpointManager | None:
 
 def cmd_help(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Show help message."""
-    table = Table(title="Available Commands", show_header=True, header_style="bold #6366F1")
-    table.add_column("Command", style="#6366F1")
+    table = Table(title="Available Commands", show_header=True, header_style="bold #818CF8")
+    table.add_column("Command", style="#818CF8")
     table.add_column("Description")
 
     for cmd in SLASH_COMMANDS.values():
@@ -89,7 +89,7 @@ def cmd_help(args: str, conversation: ConversationManager, session_manager: Sess
 
     if AT_COMMANDS:
         table.add_row("", "")
-        table.add_row("[bold #6366F1]@ Commands[/bold #6366F1]", "[dim]Quick access to workflows[/dim]")
+        table.add_row("[bold #818CF8]@ Commands[/bold #818CF8]", "[dim]Quick access to workflows[/dim]")
         for cmd in AT_COMMANDS.values():
             name = f"@{cmd.name}"
             if cmd.arg_required:
@@ -98,7 +98,7 @@ def cmd_help(args: str, conversation: ConversationManager, session_manager: Sess
 
     if HASH_COMMANDS:
         table.add_row("", "")
-        table.add_row("[bold #6366F1]# Commands[/bold #6366F1]", "[dim]Lookup symbols/files[/dim]")
+        table.add_row("[bold #818CF8]# Commands[/bold #818CF8]", "[dim]Lookup symbols/files[/dim]")
         for cmd in HASH_COMMANDS.values():
             name = f"#{cmd.name}"
             if cmd.arg_required:
@@ -107,7 +107,7 @@ def cmd_help(args: str, conversation: ConversationManager, session_manager: Sess
 
     if BANG_COMMANDS:
         table.add_row("", "")
-        table.add_row("[bold #6366F1]! Commands[/bold #6366F1]", "[dim]Quick shell commands[/dim]")
+        table.add_row("[bold #818CF8]! Commands[/bold #818CF8]", "[dim]Quick shell commands[/dim]")
         for cmd in BANG_COMMANDS.values():
             name = f"!{cmd.name}"
             if cmd.arg_required:
@@ -149,9 +149,9 @@ def cmd_sessions(args: str, conversation: ConversationManager, session_manager: 
         renderer.print_info("No saved sessions.")
         return True
 
-    table = Table(title="Saved Sessions", show_header=True, header_style="bold #6366F1")
+    table = Table(title="Saved Sessions", show_header=True, header_style="bold #818CF8")
     table.add_column("#", style="dim", justify="right")
-    table.add_column("Title", style="#6366F1")
+    table.add_column("Title", style="#818CF8")
     table.add_column("Date")
     table.add_column("Tokens", justify="right")
     table.add_column("Model")
@@ -191,7 +191,7 @@ def _render_todo_table(todos, renderer) -> None:
         TaskStatus.BLOCKED: "bold yellow",
     }
 
-    table = Table(title="Todo List", show_header=True, header_style="bold #6366F1")
+    table = Table(title="Todo List", show_header=True, header_style="bold #818CF8")
     table.add_column("ID", style="dim", no_wrap=True)
     table.add_column("Status", no_wrap=True)
     table.add_column("Description")
@@ -876,8 +876,8 @@ def cmd_checkpoint(
         if not checkpoints:
             renderer.print_info("No checkpoints found.")
             return True
-        table = Table(title="Checkpoints", show_header=True, header_style="bold #6366F1")
-        table.add_column("ID", style="#6366F1")
+        table = Table(title="Checkpoints", show_header=True, header_style="bold #818CF8")
+        table.add_column("ID", style="#818CF8")
         table.add_column("Name")
         table.add_column("Created")
         table.add_column("Messages")
@@ -985,8 +985,8 @@ def cmd_workflow(
         if not registry:
             renderer.print_info("No workflows available.")
             return True
-        table = Table(title="Available Workflows", show_header=True, header_style="bold #6366F1")
-        table.add_column("Name", style="#6366F1")
+        table = Table(title="Available Workflows", show_header=True, header_style="bold #818CF8")
+        table.add_column("Name", style="#818CF8")
         table.add_column("Description")
         for wf in registry:
             table.add_row(wf.get("name", ""), wf.get("description", ""))
@@ -1090,8 +1090,8 @@ def cmd_agent(args: str, conversation: ConversationManager, session_manager: Ses
         if not sub_agents:
             renderer.print_info("No sub-agents in this session yet.")
             return True
-        table = Table(title="Sub-Agents", show_header=True, header_style="bold #6366F1")
-        table.add_column("Name", style="#6366F1")
+        table = Table(title="Sub-Agents", show_header=True, header_style="bold #818CF8")
+        table.add_column("Name", style="#818CF8")
         table.add_column("Role")
         table.add_column("Created", style="dim")
         for sa in sub_agents:

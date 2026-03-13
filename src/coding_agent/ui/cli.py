@@ -190,7 +190,7 @@ def skills(choice):
     
     def render_table(selected_indices: list[int] | None = None):
         table = Table(title="Skills Configuration", box=box.ROUNDED, show_lines=True)
-        table.add_column("#", style="#6366F1", width=4)
+        table.add_column("#", style="#818CF8", width=4)
         table.add_column("Skill", style="bold")
         table.add_column("Enabled", justify="center", width=8)
         

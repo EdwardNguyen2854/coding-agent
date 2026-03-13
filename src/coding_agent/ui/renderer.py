@@ -224,7 +224,7 @@ class Renderer:
         Returns:
             A Rich Status spinner.
         """
-        return self.console.status(message, spinner="dots", spinner_style="dim #6366F1")
+        return self.console.status(message, spinner="dots", spinner_style="dim #818CF8")
 
     def render_separator(self) -> None:
         """Render a dim horizontal rule as a separator."""
@@ -238,7 +238,7 @@ class Renderer:
         """
         self.console.print()
         self.console.print(Text.assemble(
-            ("You", "bold #6366F1"),
+            ("You", "bold #818CF8"),
             (" > ", "green"),
             (text, ""),
         ), highlight=False)
@@ -251,12 +251,12 @@ class Renderer:
             version: Application version string.
         """
         content = Text.assemble(
-            ("coding-agent", "bold #6366F1"),
+            ("coding-agent", "bold #818CF8"),
             ("  v" + version, "dim"),
         )
         self.console.print(Panel(
             Align.left(content),
-            border_style="#6366F1 dim",
+            border_style="#818CF8 dim",
             expand=False,
             padding=(0, 2),
         ))
@@ -299,7 +299,7 @@ class Renderer:
             tool_name: Name of the tool being executed
             tool_args: Dictionary of tool arguments
         """
-        self.console.print(f"[#6366F1]{tool_name}[/#6366F1]", highlight=False)
+        self.console.print(f"[#818CF8]{tool_name}[/#818CF8]", highlight=False)
         for key, value in tool_args.items():
             value_str = str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
             if len(value_str) > _MAX_ARG_DISPLAY:

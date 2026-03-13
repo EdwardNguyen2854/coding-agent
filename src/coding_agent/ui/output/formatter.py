@@ -252,6 +252,6 @@ class ToolOutputFormatter:
             ToolStatus.SUCCESS: "green",
             ToolStatus.WARNING: "yellow",
             ToolStatus.ERROR: "red",
-            ToolStatus.INFO: "#6366F1",
+            ToolStatus.INFO: "#818CF8",
         }
-        return styles.get(status, "#6366F1")
+        return styles.get(status, "#818CF8")
