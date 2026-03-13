@@ -40,17 +40,18 @@ class LLMClient:
         return self._capabilities
 
     def _get_sampling_params(self) -> dict:
-        """Get sampling parameters based on model capabilities."""
+        """Get sampling parameters based on model capabilities.
+
+        Omits parameters entirely when the model doesn't support them —
+        sending any value (even a neutral default) causes a BadRequestError
+        on models that reject these parameters.
+        """
         params = {}
         caps = self._capabilities
         if caps is None or caps.temperature_supported:
             params["temperature"] = self.temperature
-        else:
-            params["temperature"] = 0.0
         if caps is None or caps.top_p_supported:
             params["top_p"] = self.top_p
-        else:
-            params["top_p"] = 1.0
         return params
 
     def _handle_llm_error(self, error: Exception) -> None:
@@ -122,13 +123,18 @@ class LLMClient:
     def verify_connection(self) -> None:
         """Verify connectivity to LiteLLM server.
 
-        Sends a lightweight test request to confirm the server is reachable
-        and authentication is valid.
+        Detects model capabilities first so that unsupported parameters
+        (temperature, top_p) are not sent to models that reject them.
+        Then sends a lightweight test request to confirm the server is
+        reachable and authentication is valid.
 
         Raises:
             ConnectionError: With differentiated messages for connectivity,
                 authentication, timeout, and server errors.
         """
+        caps = detect_model_capabilities(self)
+        self.set_capabilities(caps)
+
         try:
             params = self._get_sampling_params()
             litellm.completion(
