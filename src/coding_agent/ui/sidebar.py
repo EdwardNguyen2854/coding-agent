@@ -22,6 +22,7 @@ def make_toolbar(
     branch: str,
     context_limit: int = DEFAULT_CONTEXT_LIMIT,
     get_active_sub_agent: "object | None" = None,
+    get_model: "object | None" = None,
 ):
     """Create a bottom_toolbar callable for use with prompt_toolkit PromptSession.
 
@@ -33,6 +34,8 @@ def make_toolbar(
         workflow: Active Workflow instance (or None).
         branch: Current git branch name.
         context_limit: Maximum context tokens.
+        get_active_sub_agent: Callable returning the active sub-agent name or None.
+        get_model: Callable returning the current model name string, or None.
 
     Returns:
         A callable that returns a list of (style, text) tuples (FormattedText).
@@ -61,6 +64,15 @@ def make_toolbar(
         else:
             parts.append(("", "  "))
 
+        model_name = get_model() if get_model is not None else None
+        if model_name:
+            # Show only the last segment of the model name (e.g. "gpt-4o" from "litellm/gpt-4o")
+            short_model = model_name.split("/")[-1] if "/" in model_name else model_name
+            parts += [
+                ("fg:ansiblue", short_model),
+                ("", "  │  "),
+            ]
+
         parts += [
             ("", f"Context: {token_count:,} "),
             (ctx_style, f"({percentage:.1f}%)"),
@@ -85,7 +97,8 @@ def make_toolbar(
             if blocked_count:
                 summary += f"  ✗{blocked_count}"
             if in_progress:
-                label = in_progress.description[:30]
+                desc = in_progress.description
+                label = desc[:30] + "…" if len(desc) > 30 else desc
                 parts += [
                     ("", "  │  "),
                     ("", f"Todos: {summary}  ▶ {label}"),

@@ -260,6 +260,17 @@ class Renderer:
             expand=False,
             padding=(0, 2),
         ))
+        self.console.print(
+            Text.assemble(
+                ("Type ", "dim"),
+                ("/help", "#818CF8"),
+                (" for commands  •  ", "dim"),
+                ("Tab", "#818CF8"),
+                (" to autocomplete  •  ", "dim"),
+                ("Ctrl+C", "#818CF8"),
+                (" to interrupt", "dim"),
+            )
+        )
 
     def render_config(self, config_items: dict) -> None:
         """Render configuration items one per line, left-aligned.

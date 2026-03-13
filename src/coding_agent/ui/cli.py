@@ -37,6 +37,7 @@ from prompt_toolkit.styles import Style as PTStyle
 from coding_agent.core.agent import Agent
 from coding_agent.config import (
     ConfigError,
+    DEFAULT_CONFIG_DIR,
     OLLAMA_DEFAULT_API_BASE,
     apply_cli_overrides,
     ensure_docs_installed,
@@ -495,6 +496,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         branch=branch_name,
         context_limit=128000,
         get_active_sub_agent=get_active_sub_agent_name,
+        get_model=lambda: llm_client.model if llm_client else None,
     )
 
     from coding_agent.ui.interrupt import get_interrupt_handler, trigger_interrupt
@@ -510,6 +512,9 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     try:
         from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.keys import Keys
+        from prompt_toolkit.history import FileHistory
+        from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+        from prompt_toolkit.formatted_text import HTML
 
         key_bindings = KeyBindings()
 
@@ -525,13 +530,27 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             handle_interrupt()
             event.app.current_buffer.text = ""
 
+        @key_bindings.add('c-l')
+        def _(event):
+            """Handle Ctrl+L — clear terminal screen."""
+            event.app.renderer.clear()
+
+        DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        history_path = DEFAULT_CONFIG_DIR / "input_history.txt"
+
         session = PromptSession(
             completer=slash_completer,
             complete_while_typing=True,
             style=PROMPT_STYLE,
             key_bindings=key_bindings,
+            history=FileHistory(str(history_path)),
+            auto_suggest=AutoSuggestFromHistory(),
         )
-        input_func = lambda: session.prompt(STYLED_PROMPT, rprompt=toolbar_func)
+        input_func = lambda: session.prompt(
+            STYLED_PROMPT,
+            rprompt=toolbar_func,
+            placeholder=HTML('<ansigray>Ask anything, or /help for commands</ansigray>'),
+        )
     except Exception:
         # Fallback for non-Windows console environments
         input_func = lambda: input("You > ")

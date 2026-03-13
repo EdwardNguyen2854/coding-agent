@@ -1,5 +1,6 @@
 """Command system for CLI supporting multiple prefixes (/, @, #, !)."""
 
+import difflib
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -44,6 +45,7 @@ class CommandHandler:
     help_text: str
     arg_required: bool = False
     prefix: CommandPrefix = CommandPrefix.SLASH
+    category: str = "Other"
 
 
 SlashCommand = CommandHandler
@@ -77,52 +79,68 @@ def get_checkpoint_manager() -> CheckpointManager | None:
 
 def cmd_help(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Show help message."""
+    from collections import defaultdict
+
+    # Group slash commands by category
+    by_category: dict[str, list[CommandHandler]] = defaultdict(list)
+    for cmd in SLASH_COMMANDS.values():
+        by_category[cmd.category].append(cmd)
+
+    category_order = ["Session", "Config", "Workflow", "Output", "Agent", "Project", "Other"]
+
     table = Table(title="Available Commands", show_header=True, header_style="bold #818CF8")
-    table.add_column("Command", style="#818CF8")
+    table.add_column("Command", style="#818CF8", no_wrap=True)
     table.add_column("Description")
 
-    for cmd in SLASH_COMMANDS.values():
-        name = f"/{cmd.name}"
-        if cmd.arg_required:
-            name += " <arg>"
-        table.add_row(name, cmd.help_text)
+    first_category = True
+    for category in category_order:
+        cmds = by_category.get(category, [])
+        if not cmds:
+            continue
+        if not first_category:
+            table.add_row("", "")
+        first_category = False
+        table.add_row(f"[bold]{category}[/bold]", "")
+        for cmd in cmds:
+            name = f"  /{cmd.name}"
+            if cmd.arg_required:
+                name += " <arg>"
+            table.add_row(name, cmd.help_text)
 
     if AT_COMMANDS:
         table.add_row("", "")
-        table.add_row("[bold #818CF8]@ Commands[/bold #818CF8]", "[dim]Quick access to workflows[/dim]")
+        table.add_row("[bold]Shortcuts[/bold]", "")
         for cmd in AT_COMMANDS.values():
-            name = f"@{cmd.name}"
+            name = f"  @{cmd.name}"
             if cmd.arg_required:
                 name += " <arg>"
             table.add_row(name, cmd.help_text)
 
     if HASH_COMMANDS:
-        table.add_row("", "")
-        table.add_row("[bold #818CF8]# Commands[/bold #818CF8]", "[dim]Lookup symbols/files[/dim]")
         for cmd in HASH_COMMANDS.values():
-            name = f"#{cmd.name}"
+            name = f"  #{cmd.name}"
             if cmd.arg_required:
                 name += " <arg>"
             table.add_row(name, cmd.help_text)
 
     if BANG_COMMANDS:
-        table.add_row("", "")
-        table.add_row("[bold #818CF8]! Commands[/bold #818CF8]", "[dim]Quick shell commands[/dim]")
         for cmd in BANG_COMMANDS.values():
-            name = f"!{cmd.name}"
+            name = f"  !{cmd.name}"
             if cmd.arg_required:
                 name += " <arg>"
             table.add_row(name, cmd.help_text)
 
     renderer.console.print(table)
+    renderer.print_info("Tip: Press Tab for autocomplete, Ctrl+C to interrupt the agent.")
     return True
 
 
 def cmd_clear(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
     """Clear conversation history."""
+    msg_count = len([m for m in conversation.get_messages() if m.get("role") != "system"])
     conversation.clear()
     renderer.console.clear()
-    renderer.print_success("Conversation cleared.")
+    renderer.print_success(f"Conversation cleared ({msg_count} messages removed).")
     return True
 
 
@@ -433,11 +451,25 @@ def cmd_model(args: str, conversation: ConversationManager, session_manager: Ses
             timeout=10,
         )
     except (URLError, socket_timeout, TimeoutError):
-        renderer.print_error(f"Error: Model '{model_name}' validation timed out. Please try again.")
+        renderer.print_error(f"Error: Model '{model_name}' validation timed out.")
+        renderer.print_info("Check that the API endpoint is reachable, or try again.")
         return True
     except Exception as e:
-        # Use generic error message to avoid exposing sensitive info (API keys, rate limits, etc.)
-        renderer.print_error(f"Error: Model '{model_name}' is not available or not accessible.")
+        err_str = str(e).lower()
+        if "401" in err_str or "authentication" in err_str or "api key" in err_str or "unauthorized" in err_str:
+            renderer.print_error(f"Error: Authentication failed for model '{model_name}'.")
+            renderer.print_info("Check your API key with /api-key <key> or /config-set api_key <key>.")
+        elif "429" in err_str or "rate limit" in err_str or "rate_limit" in err_str:
+            renderer.print_error(f"Error: Rate limit reached while validating '{model_name}'.")
+            renderer.print_info("Wait a moment and try again.")
+        elif "404" in err_str or "not found" in err_str or "no such model" in err_str:
+            renderer.print_error(f"Error: Model '{model_name}' not found.")
+            renderer.print_info("Check the model name and ensure it is available at the configured API base.")
+        elif "connect" in err_str or "connection" in err_str or "refused" in err_str:
+            renderer.print_error(f"Error: Could not connect to the API endpoint.")
+            renderer.print_info(f"Check api_base with /config. Current: {llm_client.api_base}")
+        else:
+            renderer.print_error(f"Error: Model '{model_name}' is not available or not accessible.")
         return True
 
     # Model is valid - switch to it
@@ -582,17 +614,21 @@ def cmd_config(args: str, conversation: ConversationManager, session_manager: Se
         return True
 
     runtime = get_runtime_config()
-    renderer.print_info("Current Runtime Configuration:")
-    renderer.print_info(f"  Model: {llm_client.model}")
-    if runtime.get("api_key"):
-        renderer.print_info(f"  API Key: ***")
-    else:
-        renderer.print_info(f"  API Key: {llm_client.api_key if llm_client.api_key else 'None'}")
-    renderer.print_info(f"  API Base: {llm_client.api_base}")
-    renderer.print_info(f"  Temperature: {llm_client.temperature}")
-    renderer.print_info(f"  top_p: {llm_client.top_p}")
-    renderer.print_info(f"  Max Output Tokens: {llm_client.max_output_tokens}")
+    api_key_display = "***" if runtime.get("api_key") or llm_client.api_key else "None"
 
+    table = Table(title="Runtime Configuration", show_header=True, header_style="bold #818CF8", box=None)
+    table.add_column("Setting", style="dim", no_wrap=True)
+    table.add_column("Value")
+
+    table.add_row("model", llm_client.model)
+    table.add_row("api_base", llm_client.api_base or "None")
+    table.add_row("api_key", api_key_display)
+    table.add_row("temperature", str(llm_client.temperature))
+    table.add_row("top_p", str(llm_client.top_p))
+    table.add_row("max_output_tokens", str(llm_client.max_output_tokens))
+
+    renderer.console.print(table)
+    renderer.print_info("Use /config-set <key> <value> to change settings.")
     return True
 
 
@@ -1212,31 +1248,31 @@ def cmd_output(args: str, conversation: ConversationManager, session_manager: Se
 
 
 COMMANDS: dict[str, CommandHandler] = {
-    "help": CommandHandler("help", cmd_help, "Show help message", False),
-    "checkpoint": CommandHandler("checkpoint", cmd_checkpoint, "Manage checkpoints (save, list, restore, delete)", False),
-    "clear": CommandHandler("clear", cmd_clear, "Clear conversation history", False),
-    "compact": CommandHandler("compact", cmd_compact, "Manually trigger conversation truncation", False),
-    "sessions": CommandHandler("sessions", cmd_sessions, "List saved sessions", False),
-    "model": CommandHandler("model", cmd_model, "Switch to a different model", True),
-    "model-info": CommandHandler("model-info", cmd_model_info, "Show current model capabilities", False),
-    "init": CommandHandler("init", cmd_init, "Create AGENTS.md template in project root", False),
-    "skills": CommandHandler("skills", cmd_skills, "Configure skills (toggle enabled/disabled)", False),
-    "exit": CommandHandler("exit", cmd_exit, "Exit the session", False),
-    "todo": CommandHandler("todo", cmd_todo, "Show/manage todo list", False),
-    "plan": CommandHandler("plan", cmd_plan, "Create implementation plan", True),
-    "approve": CommandHandler("approve", cmd_approve, "Approve implementation plan", False),
-    "reject": CommandHandler("reject", cmd_reject, "Reject implementation plan", False),
-    "auto-allow": CommandHandler("auto-allow", cmd_auto_allow, "Toggle auto-allow mode for approvals", False),
-    "workflow": CommandHandler("workflow", cmd_workflow, "List or run a YAML workflow", False),
-    "temp": CommandHandler("temp", cmd_temp, "Set temperature (0.0-2.0)", True),
-    "top-p": CommandHandler("top-p", cmd_top_p, "Set top_p (0.0-1.0)", True),
-    "api-key": CommandHandler("api-key", cmd_api_key, "Set API key at runtime", True),
-    "config": CommandHandler("config", cmd_config, "Show current runtime config", False),
-    "config-set": CommandHandler("config-set", cmd_config_set, "Set runtime config option", True),
-    "filter": CommandHandler("filter", cmd_filter, "Filter tool output (e.g., /filter tool:grep error)", False),
-    "expand": CommandHandler("expand", cmd_expand, "Expand truncated tool output", True),
-    "output": CommandHandler("output", cmd_output, "Show tool output history", False),
-    "agent": CommandHandler("agent", cmd_agent, "Manage agent mode: /agent team-mode on|off, /agent list, /agent status", False),
+    "help": CommandHandler("help", cmd_help, "Show this help message", False, CommandPrefix.SLASH, "Session"),
+    "clear": CommandHandler("clear", cmd_clear, "Clear conversation history", False, CommandPrefix.SLASH, "Session"),
+    "compact": CommandHandler("compact", cmd_compact, "Manually trigger conversation truncation", False, CommandPrefix.SLASH, "Session"),
+    "sessions": CommandHandler("sessions", cmd_sessions, "List saved sessions", False, CommandPrefix.SLASH, "Session"),
+    "exit": CommandHandler("exit", cmd_exit, "Exit the session", False, CommandPrefix.SLASH, "Session"),
+    "model": CommandHandler("model", cmd_model, "Switch to a different model", True, CommandPrefix.SLASH, "Config"),
+    "model-info": CommandHandler("model-info", cmd_model_info, "Show current model capabilities", False, CommandPrefix.SLASH, "Config"),
+    "temp": CommandHandler("temp", cmd_temp, "Set temperature (0.0-2.0)", True, CommandPrefix.SLASH, "Config"),
+    "top-p": CommandHandler("top-p", cmd_top_p, "Set top_p (0.0-1.0)", True, CommandPrefix.SLASH, "Config"),
+    "api-key": CommandHandler("api-key", cmd_api_key, "Set API key at runtime", True, CommandPrefix.SLASH, "Config"),
+    "config": CommandHandler("config", cmd_config, "Show current runtime config", False, CommandPrefix.SLASH, "Config"),
+    "config-set": CommandHandler("config-set", cmd_config_set, "Set runtime config option", True, CommandPrefix.SLASH, "Config"),
+    "plan": CommandHandler("plan", cmd_plan, "Create implementation plan", True, CommandPrefix.SLASH, "Workflow"),
+    "approve": CommandHandler("approve", cmd_approve, "Approve implementation plan", False, CommandPrefix.SLASH, "Workflow"),
+    "reject": CommandHandler("reject", cmd_reject, "Reject implementation plan", False, CommandPrefix.SLASH, "Workflow"),
+    "todo": CommandHandler("todo", cmd_todo, "Show/manage todo list", False, CommandPrefix.SLASH, "Workflow"),
+    "workflow": CommandHandler("workflow", cmd_workflow, "List or run a YAML workflow", False, CommandPrefix.SLASH, "Workflow"),
+    "auto-allow": CommandHandler("auto-allow", cmd_auto_allow, "Toggle auto-allow mode for approvals", False, CommandPrefix.SLASH, "Workflow"),
+    "filter": CommandHandler("filter", cmd_filter, "Filter tool output (e.g., /filter tool:grep error)", False, CommandPrefix.SLASH, "Output"),
+    "expand": CommandHandler("expand", cmd_expand, "Expand truncated tool output", True, CommandPrefix.SLASH, "Output"),
+    "output": CommandHandler("output", cmd_output, "Show tool output history", False, CommandPrefix.SLASH, "Output"),
+    "agent": CommandHandler("agent", cmd_agent, "Manage agent mode: /agent team-mode on|off, /agent list, /agent status", False, CommandPrefix.SLASH, "Agent"),
+    "checkpoint": CommandHandler("checkpoint", cmd_checkpoint, "Manage checkpoints (save, list, restore, delete)", False, CommandPrefix.SLASH, "Project"),
+    "init": CommandHandler("init", cmd_init, "Create AGENTS.md template in project root", False, CommandPrefix.SLASH, "Project"),
+    "skills": CommandHandler("skills", cmd_skills, "Configure skills (toggle enabled/disabled)", False, CommandPrefix.SLASH, "Project"),
 }
 
 SLASH_COMMANDS = COMMANDS
@@ -1547,7 +1583,15 @@ def execute_command(
     registry = _get_registry(prefix)
 
     if command_name not in registry:
-        renderer.print_error(f"Unknown command: {prefix.value}{command_name}. Type /help for available commands.")
+        suggestions = difflib.get_close_matches(command_name, registry.keys(), n=1, cutoff=0.6)
+        if suggestions:
+            renderer.print_error(
+                f"Unknown command: {prefix.value}{command_name}. Did you mean {prefix.value}{suggestions[0]}?"
+            )
+        else:
+            renderer.print_error(
+                f"Unknown command: {prefix.value}{command_name}. Type /help for available commands."
+            )
         return True
 
     cmd = registry[command_name]
