@@ -5,8 +5,18 @@ from unittest.mock import MagicMock, patch
 import litellm
 import pytest
 
+import coding_agent.config.config as _config_module
 from coding_agent.config import AgentConfig
+from coding_agent.config.config import ModelCapabilities
 from coding_agent.core.llm import LLMClient
+
+
+@pytest.fixture(autouse=True)
+def clear_capabilities_cache():
+    """Clear the model capabilities cache before and after each test to prevent cross-test pollution."""
+    _config_module._model_capabilities_cache.clear()
+    yield
+    _config_module._model_capabilities_cache.clear()
 
 
 @pytest.fixture()
@@ -837,3 +847,78 @@ class TestSendMessageStreamApiKeySecurity:
         with pytest.raises(ConnectionError) as exc_info:
             list(client.send_message_stream(sample_messages))
         assert "sk-secret-key-12345" not in str(exc_info.value)
+
+
+class TestSamplingParamsUnsupported:
+    """Unsupported temperature/top_p params are omitted, not sent with fallback values."""
+
+    def test_temperature_omitted_when_unsupported(self, config):
+        """temperature key must be absent when caps say unsupported."""
+        client = LLMClient(config)
+        client.set_capabilities(ModelCapabilities(temperature_supported=False, top_p_supported=True))
+        params = client._get_sampling_params()
+        assert "temperature" not in params
+
+    def test_top_p_omitted_when_unsupported(self, config):
+        """top_p key must be absent when caps say unsupported."""
+        client = LLMClient(config)
+        client.set_capabilities(ModelCapabilities(temperature_supported=True, top_p_supported=False))
+        params = client._get_sampling_params()
+        assert "top_p" not in params
+
+    def test_both_omitted_when_both_unsupported(self, config):
+        """Neither temperature nor top_p sent when both are unsupported."""
+        client = LLMClient(config)
+        client.set_capabilities(ModelCapabilities(temperature_supported=False, top_p_supported=False))
+        params = client._get_sampling_params()
+        assert "temperature" not in params
+        assert "top_p" not in params
+
+    def test_both_included_when_caps_none(self, config):
+        """Both params are included when capabilities are unknown (None)."""
+        client = LLMClient(config)
+        assert client.get_capabilities() is None
+        params = client._get_sampling_params()
+        assert "temperature" in params
+        assert "top_p" in params
+
+    @patch("coding_agent.core.llm.litellm.completion")
+    def test_verify_connection_detects_caps_and_omits_unsupported(self, mock_completion, config):
+        """verify_connection detects capabilities; models that reject params get none sent."""
+        mock_completion.side_effect = litellm.BadRequestError(
+            message="temperature not supported",
+            model="litellm/gpt-4o",
+            llm_provider="openai",
+            response=MagicMock(status_code=400),
+        )
+        client = LLMClient(config)
+        # Both detect and ping will fail with BadRequestError → ConnectionError
+        with pytest.raises(ConnectionError):
+            client.verify_connection()
+        # Capabilities should have been detected and set as unsupported
+        caps = client.get_capabilities()
+        assert caps is not None
+        assert caps.temperature_supported is False
+        assert caps.top_p_supported is False
+
+    @patch("coding_agent.core.llm.litellm.completion")
+    def test_stream_omits_temperature_when_unsupported(self, mock_completion, config, sample_messages):
+        """send_message_stream omits temperature when model capability says unsupported."""
+        mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
+        with patch("coding_agent.core.llm.litellm.stream_chunk_builder", return_value=MagicMock()):
+            client = LLMClient(config)
+            client.set_capabilities(ModelCapabilities(temperature_supported=False, top_p_supported=True))
+            list(client.send_message_stream(sample_messages))
+        call_kwargs = mock_completion.call_args[1]
+        assert "temperature" not in call_kwargs
+
+    @patch("coding_agent.core.llm.litellm.completion")
+    def test_stream_omits_top_p_when_unsupported(self, mock_completion, config, sample_messages):
+        """send_message_stream omits top_p when model capability says unsupported."""
+        mock_completion.return_value = iter(_make_stream_chunks(["ok"]))
+        with patch("coding_agent.core.llm.litellm.stream_chunk_builder", return_value=MagicMock()):
+            client = LLMClient(config)
+            client.set_capabilities(ModelCapabilities(temperature_supported=True, top_p_supported=False))
+            list(client.send_message_stream(sample_messages))
+        call_kwargs = mock_completion.call_args[1]
+        assert "top_p" not in call_kwargs
