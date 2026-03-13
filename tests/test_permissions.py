@@ -180,10 +180,17 @@ class TestApprovalKeyGeneration:
     """Test approval key generation."""
 
     def test_shell_command_key(self):
-        """Test approval key for shell commands."""
+        """Test approval key for shell commands uses the full command string."""
         ps = PermissionSystem()
         key = ps._get_approval_key("shell", {"command": "echo hello"})
-        assert key == "shell:echo"
+        assert key == "shell:echo hello"
+
+    def test_shell_command_key_exact_match(self):
+        """Different commands produce different keys (no over-broad caching)."""
+        ps = PermissionSystem()
+        key1 = ps._get_approval_key("shell", {"command": "git status"})
+        key2 = ps._get_approval_key("shell", {"command": "git push --force"})
+        assert key1 != key2
 
     def test_file_write_key(self):
         """Test approval key for file_write."""
