@@ -18,7 +18,10 @@ from coding_agent.config import (
     DEFAULT_SKILLS,
     SkillsConfig,
     SkillSetting,
+    create_template_config,
+    is_ollama_model,
     load_config,
+    OLLAMA_DEFAULT_API_BASE,
 )
 _early_config = None
 try:
@@ -37,8 +40,8 @@ from prompt_toolkit.styles import Style as PTStyle
 from coding_agent.core.agent import Agent
 from coding_agent.config import (
     ConfigError,
+    ConfigNotFoundError,
     DEFAULT_CONFIG_DIR,
-    OLLAMA_DEFAULT_API_BASE,
     apply_cli_overrides,
     ensure_docs_installed,
     get_runtime_config,
@@ -60,6 +63,64 @@ from coding_agent.workflow import WorkflowManager, WorkflowState
 
 import litellm
 litellm.suppress_debug_info = True
+
+def _run_first_time_setup(
+    model_override: str | None,
+    api_base_override: str | None,
+) -> "AgentConfig | None":
+    """Interactive first-run setup: create config.yaml and return loaded config.
+
+    Prompts the user for the required fields (model and api_base), writes a
+    commented template config file, and returns the loaded AgentConfig.
+
+    Returns None if the user aborts or the resulting config is invalid.
+    """
+    # Access DEFAULT_CONFIG_FILE via the module at call time so that
+    # monkeypatching in tests affects the path we write to and load from.
+    import coding_agent.config.config as _cfg_module
+    config_path = _cfg_module.DEFAULT_CONFIG_FILE
+
+    click.echo()
+    click.echo("Welcome to Coding-Agent!")
+    click.echo(f"No configuration file found at: {config_path}")
+    click.echo()
+    click.echo("Let's set up your configuration. Press Ctrl+C to cancel.")
+    click.echo()
+
+    try:
+        default_model = model_override or "litellm/gpt-4o"
+        chosen_model = click.prompt(
+            "Model",
+            default=default_model,
+            prompt_suffix="\n  (e.g. litellm/gpt-4o, ollama_chat/llama3.2)\n> ",
+        )
+
+        default_base = (
+            api_base_override
+            or (OLLAMA_DEFAULT_API_BASE if is_ollama_model(chosen_model) else "http://localhost:4000")
+        )
+        chosen_base = click.prompt(
+            "API base URL",
+            default=default_base,
+            prompt_suffix="\n  (e.g. http://localhost:4000 for LiteLLM, http://localhost:11434 for Ollama)\n> ",
+        )
+    except (click.Abort, KeyboardInterrupt):
+        click.echo("\nSetup cancelled.")
+        return None
+
+    create_template_config(config_path, model=chosen_model, api_base=chosen_base)
+
+    click.echo()
+    click.echo(f"Configuration saved to: {config_path}")
+    click.echo("You can edit this file to add optional settings (api_key, temperature, etc.).")
+    click.echo()
+
+    try:
+        return load_config()
+    except ConfigError as e:
+        click.echo(str(e), err=True)
+        return None
+
 
 STYLED_PROMPT = FormattedText([
     ("class:user", "You"),
@@ -329,6 +390,15 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
 
     try:
         config = load_config()
+    except ConfigNotFoundError:
+        config = _run_first_time_setup(model, api_base)
+        if config is None:
+            sys.exit(1)
+    except ConfigError as e:
+        click.echo(str(e), err=True)
+        sys.exit(1)
+
+    try:
         config = apply_cli_overrides(
             config,
             model=model,
@@ -360,7 +430,6 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         click.echo(str(e), err=True)
         sys.exit(1)
 
-    from coding_agent.config import is_ollama_model
     backend = "Ollama" if is_ollama_model(config.model) else "LiteLLM"
     renderer.print_info(f"Connected to {backend}")
 
