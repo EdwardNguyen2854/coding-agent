@@ -604,6 +604,11 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             """Handle Ctrl+L — clear terminal screen."""
             event.app.renderer.clear()
 
+        @key_bindings.add('s-return')
+        def _(event):
+            """Handle Shift+Enter — insert newline for multi-line input."""
+            event.current_buffer.newline()
+
         DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         history_path = DEFAULT_CONFIG_DIR / "input_history.txt"
 
