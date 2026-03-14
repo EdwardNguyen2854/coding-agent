@@ -2,12 +2,52 @@
 
 import json
 import logging
+import re
+import uuid
 from collections.abc import Generator
 from dataclasses import dataclass, field
 
 import litellm
 
 _log = logging.getLogger(__name__)
+
+
+def _is_minimax_openrouter(model: str) -> bool:
+    """True when MiniMax is accessed via OpenRouter (which does not normalize tool-call format)."""
+    m = model.lower()
+    return "openrouter" in m and "minimax" in m
+
+
+def _parse_minimax_tool_calls(content: str) -> list[dict]:
+    """Parse MiniMax XML tool-call format from message content.
+
+    MiniMax returns tool calls as XML when accessed via OpenRouter:
+        <minimax:tool_call>
+        <invoke name="fn_name">
+        <parameter name="key">value</parameter>
+        </invoke>
+        </minimax:tool_call>
+    """
+    tool_calls = []
+    blocks = re.findall(r"<minimax:tool_call>(.*?)</minimax:tool_call>", content, re.DOTALL)
+    for block in blocks:
+        name_m = re.search(r'<invoke name="([^"]+)"', block)
+        if not name_m:
+            continue
+        name = name_m.group(1)
+        params: dict = {}
+        for pm in re.finditer(r'<parameter name="([^"]+)">(.*?)</parameter>', block, re.DOTALL):
+            val = pm.group(2).strip()
+            try:
+                params[pm.group(1)] = json.loads(val)
+            except json.JSONDecodeError:
+                params[pm.group(1)] = val
+        tool_calls.append({
+            "id": f"call_{uuid.uuid4().hex[:8]}",
+            "name": name,
+            "arguments": params,
+        })
+    return tool_calls
 
 
 class ModelRejectionError(ConnectionError):
@@ -211,6 +251,8 @@ class LLMClient:
                         "name": tc.function.name,
                         "arguments": arguments,
                     })
+            elif _is_minimax_openrouter(self.model or "") and message.content:
+                result.tool_calls.extend(_parse_minimax_tool_calls(message.content))
         return result
 
 
