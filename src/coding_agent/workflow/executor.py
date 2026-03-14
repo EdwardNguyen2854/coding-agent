@@ -39,9 +39,13 @@ class WorkflowExecutor:
             step.skill, self.workflow.skill
         )
 
+        guard = getattr(self.agent, "guard", None) or getattr(self.agent, "permission_system", None)
+
         if skill:
             self._current_skill_context = f"## {skill.name} Skill\n{skill.instructions}"
             self.agent.conversation.add_message("system", self._current_skill_context)
+            if guard and skill.allowed_tools:
+                guard.push_allowed_tools(skill.allowed_tools)
 
         try:
             outputs = []
@@ -60,6 +64,8 @@ class WorkflowExecutor:
             if skill and self._current_skill_context is not None:
                 self.agent.conversation.remove_message(self._current_skill_context)
                 self._current_skill_context = None
+                if guard and skill.allowed_tools:
+                    guard.pop_allowed_tools()
 
     async def _execute_action(self, action: dict) -> str:
         """Execute a single action."""

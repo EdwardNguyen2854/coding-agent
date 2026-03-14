@@ -1416,11 +1416,74 @@ BANG_COMMANDS["lint"] = CommandHandler("lint", cmd_bang_lint, "Run linter", Fals
 BANG_COMMANDS["tidy"] = CommandHandler("tidy", cmd_bang_tidy, "Run code formatter", False, CommandPrefix.BANG)
 
 
+def _substitute_skill_args(content: str, args: str, skill_dir: Path | None, session_id: str) -> tuple[str, bool]:
+    """Substitute argument placeholders in skill content.
+
+    Args:
+        content: Raw skill instructions.
+        args: Arguments passed by the user.
+        skill_dir: Directory containing the SKILL.md file.
+        session_id: Current session ID.
+
+    Returns:
+        Tuple of (substituted content, whether $ARGUMENTS was present in original).
+    """
+    import re
+    had_arguments_placeholder = "$ARGUMENTS" in content or bool(re.search(r'\$\d+', content))
+
+    parts = args.split() if args else []
+
+    # Named substitutions
+    content = content.replace("${CLAUDE_SKILL_DIR}", str(skill_dir) if skill_dir else "")
+    content = content.replace("${CLAUDE_SESSION_ID}", session_id)
+    content = content.replace("$ARGUMENTS", args)
+
+    # Indexed: $ARGUMENTS[N] and $N shorthand
+    for i, val in enumerate(parts):
+        content = content.replace(f"$ARGUMENTS[{i}]", val)
+        content = content.replace(f"${i}", val)
+
+    return content, had_arguments_placeholder
+
+
+def _preprocess_skill_content(content: str) -> str:
+    """Execute !`command` expressions in skill content and replace with output.
+
+    Shell commands embedded as !`cmd` are run before the content is sent to the
+    LLM. This allows dynamic context injection (e.g. !`gh pr diff`).
+
+    Args:
+        content: Skill content after argument substitution.
+
+    Returns:
+        Content with !`cmd` expressions replaced by their stdout output.
+    """
+    import re
+    import subprocess
+
+    def _run(match: re.Match) -> str:
+        cmd = match.group(1)
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=30
+            )
+            return result.stdout.strip() if result.returncode == 0 else f"[error: {result.stderr.strip()}]"
+        except subprocess.TimeoutExpired:
+            return "[error: command timed out]"
+        except Exception as e:
+            return f"[error: {e}]"
+
+    return re.sub(r'!`([^`]+)`', _run, content)
+
+
 def register_skills(skills: dict[str, Skill], agent: "Agent") -> list[str]:
     """Register skills from SKILL.md as dynamic slash commands.
 
     Each skill becomes a slash command that runs its instructions through
     the agent. Project skills override built-in commands with the same name.
+
+    Skills with ``user_invocable=False`` are not registered as slash commands
+    (they serve as reference context for the agent only).
 
     Args:
         skills: Mapping of skill name to Skill object.
@@ -1435,10 +1498,18 @@ def register_skills(skills: dict[str, Skill], agent: "Agent") -> list[str]:
         if not name:
             continue
 
+        # Skills marked user_invocable=False are reference-only — not slash commands
+        if not skill.user_invocable:
+            continue
+
         content = skill.instructions
         description = skill.description
 
-        def _make_handler(skill_content: str):
+        help_text = f"[skill] {description or (content[:60].splitlines()[0] if content else name)}"
+        if skill.argument_hint:
+            help_text += f"  ({skill.argument_hint})"
+
+        def _make_handler(sk: Skill):
             def handler(
                 args: str,
                 conversation: ConversationManager,
@@ -1447,21 +1518,56 @@ def register_skills(skills: dict[str, Skill], agent: "Agent") -> list[str]:
                 llm_client: LLMClient | None = None,
                 _agent: "Agent | None" = None,
             ) -> bool:
-                prompt = skill_content
-                if args:
-                    prompt = f"{skill_content}\n\nAdditional context: {args}"
                 effective_agent = _agent or agent
                 if effective_agent is None:
                     renderer.print_error("No agent available to run skill.")
                     return True
-                effective_agent.run(prompt)
+
+                session_id = str(session_manager.current_session_id or "")
+
+                # Phase 3: argument substitution
+                prompt, had_placeholder = _substitute_skill_args(
+                    sk.instructions, args, sk.skill_dir, session_id
+                )
+
+                # Phase 4: !cmd shell preprocessing
+                prompt = _preprocess_skill_content(prompt)
+
+                # Fall back to appending args if no placeholder was present
+                if args and not had_placeholder:
+                    prompt = f"{prompt}\n\nAdditional context: {args}"
+
+                # Phase 5: allowed-tools scoping
+                guard = getattr(effective_agent, "guard", None) or getattr(effective_agent, "permission_system", None)
+                if guard and sk.allowed_tools:
+                    guard.push_allowed_tools(sk.allowed_tools)
+
+                # Phase 6: model override
+                prev_runtime = get_runtime_config()
+                if sk.model:
+                    set_runtime_config(model=sk.model)
+
+                try:
+                    effective_agent.run(prompt)
+                finally:
+                    # Restore model override
+                    if sk.model:
+                        if prev_runtime.get("model") is not None:
+                            set_runtime_config(model=prev_runtime["model"])
+                        else:
+                            from coding_agent.config.config import clear_runtime_config
+                            clear_runtime_config()
+                    # Restore allowed-tools
+                    if guard and sk.allowed_tools:
+                        guard.pop_allowed_tools()
+
                 return True
             return handler
 
         SLASH_COMMANDS[name] = CommandHandler(
             name=name,
-            handler=_make_handler(content),
-            help_text=f"[skill] {description or content[:60].splitlines()[0] if content else name}",
+            handler=_make_handler(skill),
+            help_text=help_text,
             arg_required=False,
         )
         registered.append(name)

@@ -44,6 +44,32 @@ Skill content here."""
         assert frontmatter == {}
         assert "# Instructions" in remaining
 
+    def test_parses_bool_fields(self):
+        """Parses disable-model-invocation and user-invocable as booleans."""
+        content = "---\ndisable-model-invocation: true\nuser-invocable: false\n---\nbody"
+        frontmatter, _ = parse_yaml_frontmatter(content)
+        assert frontmatter["disable-model-invocation"] is True
+        assert frontmatter["user-invocable"] is False
+
+    def test_parses_allowed_tools_comma_list(self):
+        """Parses allowed-tools as a list from comma-separated string."""
+        content = "---\nallowed-tools: Read, Grep, shell\n---\nbody"
+        frontmatter, _ = parse_yaml_frontmatter(content)
+        assert frontmatter["allowed-tools"] == ["Read", "Grep", "shell"]
+
+    def test_parses_allowed_tools_bracket_list(self):
+        """Parses allowed-tools as a list from bracket-wrapped string."""
+        content = "---\nallowed-tools: [Read, Grep]\n---\nbody"
+        frontmatter, _ = parse_yaml_frontmatter(content)
+        assert frontmatter["allowed-tools"] == ["Read", "Grep"]
+
+    def test_parses_model_and_argument_hint(self):
+        """Parses model and argument-hint as strings."""
+        content = "---\nmodel: litellm/gpt-4o\nargument-hint: [issue-number]\n---\nbody"
+        frontmatter, _ = parse_yaml_frontmatter(content)
+        assert frontmatter["model"] == "litellm/gpt-4o"
+        assert frontmatter["argument-hint"] == "[issue-number]"
+
 
 class TestParseSkills:
     """Tests for parse_skills function."""
@@ -94,6 +120,45 @@ Review code carefully."""
         assert "unknown" in skills
         assert skills["unknown"].description == "Code review skill"
         assert "Review code carefully" in skills["unknown"].instructions
+
+    def test_parses_new_control_fields(self, tmp_path):
+        """New frontmatter fields are parsed into Skill attributes."""
+        content = (
+            "---\n"
+            "description: A deployment skill\n"
+            "disable-model-invocation: true\n"
+            "user-invocable: false\n"
+            "allowed-tools: Read, Grep\n"
+            "model: litellm/gpt-4o\n"
+            "argument-hint: [env]\n"
+            "context: fork\n"
+            "agent: Explore\n"
+            "---\n"
+            "Deploy the service."
+        )
+        skills = parse_skills(content, tmp_path)
+        skill = skills[tmp_path.name]
+        assert skill.disable_model_invocation is True
+        assert skill.user_invocable is False
+        assert skill.allowed_tools == ["Read", "Grep"]
+        assert skill.model == "litellm/gpt-4o"
+        assert skill.argument_hint == "[env]"
+        assert skill.context == "fork"
+        assert skill.agent_type == "Explore"
+        assert skill.skill_dir == tmp_path
+
+    def test_defaults_for_new_fields(self, tmp_path):
+        """New fields default to safe values when absent from frontmatter."""
+        content = "---\ndescription: Simple skill\n---\nDo something."
+        skills = parse_skills(content, tmp_path)
+        skill = skills[tmp_path.name]
+        assert skill.disable_model_invocation is False
+        assert skill.user_invocable is True
+        assert skill.allowed_tools == []
+        assert skill.model is None
+        assert skill.argument_hint is None
+        assert skill.context is None
+        assert skill.agent_type is None
 
 
 class TestFindProjectSkillFile:
@@ -181,3 +246,37 @@ class TestLoadSkills:
 
         assert "deploy" in skills
         assert str(global_skill_folder / "SKILL.md") in loaded
+
+    def test_nested_coding_agent_skills_dir_loaded(self, tmp_path):
+        """Skills in <git-root>/.coding-agent/skills/ are discovered."""
+        git_dir = tmp_path / ".git"
+        git_dir.mkdir()
+        nested_skills_dir = tmp_path / ".coding-agent" / "skills" / "lint"
+        nested_skills_dir.mkdir(parents=True)
+        skill_file = nested_skills_dir / "SKILL.md"
+        skill_file.write_text("---\ndescription: Lint skill\n---\nRun linting.")
+
+        with patch("coding_agent.config.skills.GLOBAL_SKILLS_DIR", tmp_path / "nonexistent"):
+            skills, loaded = load_skills(tmp_path)
+
+        assert "lint" in skills
+        assert str(skill_file) in loaded
+
+    def test_cwd_local_skills_override_global(self, tmp_path):
+        """CWD-local .coding-agent/skills/ override global skills with same name."""
+        global_skills_dir = tmp_path / "global-skills"
+        global_skill = global_skills_dir / "review"
+        global_skill.mkdir(parents=True)
+        (global_skill / "SKILL.md").write_text("Global review.")
+
+        sub = tmp_path / "sub"
+        sub.mkdir()
+        local_skill = sub / ".coding-agent" / "skills" / "review"
+        local_skill.mkdir(parents=True)
+        (local_skill / "SKILL.md").write_text("Local review.")
+
+        with patch("coding_agent.config.skills.GLOBAL_SKILLS_DIR", global_skills_dir):
+            skills, _ = load_skills(sub)
+
+        assert "review" in skills
+        assert "Local review" in skills["review"].instructions
