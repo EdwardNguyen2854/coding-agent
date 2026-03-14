@@ -47,6 +47,7 @@ class PermissionSystem:
         self.approved_operations = {}
         self.auto_allow = auto_allow
         self._prompt_callback = None
+        self._tool_overrides: list[set[str]] = []
 
     def set_prompt_callback(self, callback) -> None:
         """Set a callback for async prompting in TUI context.
@@ -65,6 +66,19 @@ class PermissionSystem:
         """Check if auto-allow mode is enabled."""
         return self.auto_allow
 
+    def push_allowed_tools(self, tools: list[str]) -> None:
+        """Temporarily allow tools without approval (stack-based).
+
+        Args:
+            tools: Tool names to allow without prompting.
+        """
+        self._tool_overrides.append(set(tools))
+
+    def pop_allowed_tools(self) -> None:
+        """Remove the most recent allowed-tools override frame."""
+        if self._tool_overrides:
+            self._tool_overrides.pop()
+
     def check_approval(self, tool_name: str, params: dict) -> bool:
         """Check if user approves this tool execution.
 
@@ -76,6 +90,10 @@ class PermissionSystem:
             True if approved, False if denied
         """
         if self.auto_allow:
+            return True
+
+        # Skill-scoped tool allowlist
+        if any(tool_name in frame for frame in self._tool_overrides):
             return True
 
         if tool_name not in TOOLS_REQUIRING_APPROVAL:

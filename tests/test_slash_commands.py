@@ -474,7 +474,7 @@ class TestRegisterSkills:
     def test_empty_skill_name_skipped(self, mock_conversation, mock_session_manager, mock_renderer):
         """Skills with empty names are not registered."""
         mock_agent = MagicMock()
-        
+
         # Import Skill class to create proper mock
         from coding_agent.config.skills import Skill
         skills = {"": Skill(name="", description="", instructions="Some content.")}
@@ -482,3 +482,97 @@ class TestRegisterSkills:
         registered = register_skills(skills, mock_agent)
         assert "" not in COMMANDS
         assert registered == []
+
+    def test_user_invocable_false_not_registered(self, mock_conversation, mock_session_manager, mock_renderer):
+        """Skills with user_invocable=False are not registered as slash commands."""
+        mock_agent = MagicMock()
+        from coding_agent.config.skills import Skill
+        skills = {
+            "hidden": Skill(name="hidden", description="Reference", instructions="Context.", user_invocable=False)
+        }
+        registered = register_skills(skills, mock_agent)
+        assert "hidden" not in COMMANDS
+        assert registered == []
+
+    def test_argument_hint_in_help_text(self, mock_conversation, mock_session_manager, mock_renderer):
+        """argument_hint is appended to the help text."""
+        mock_agent = MagicMock()
+        from coding_agent.config.skills import Skill
+        skills = {
+            "deploy": Skill(
+                name="deploy", description="Deploy the service",
+                instructions="Deploy.", argument_hint="[env]"
+            )
+        }
+        registered = register_skills(skills, mock_agent)
+        try:
+            assert "[env]" in SLASH_COMMANDS["deploy"].help_text
+        finally:
+            for name in registered:
+                COMMANDS.pop(name, None)
+
+
+class TestSubstituteSkillArgs:
+    """Tests for _substitute_skill_args helper."""
+
+    def test_arguments_placeholder_replaced(self):
+        from coding_agent.ui.slash_commands import _substitute_skill_args
+        content, had = _substitute_skill_args("Fix issue $ARGUMENTS", "123", None, "sess1")
+        assert content == "Fix issue 123"
+        assert had is True
+
+    def test_positional_args_replaced(self):
+        from coding_agent.ui.slash_commands import _substitute_skill_args
+        content, _ = _substitute_skill_args("Migrate $0 from $1 to $2", "Widget React Vue", None, "sess1")
+        assert content == "Migrate Widget from React to Vue"
+
+    def test_dollar_n_shorthand(self):
+        from coding_agent.ui.slash_commands import _substitute_skill_args
+        content, _ = _substitute_skill_args("Task: $0", "hello", None, "")
+        assert content == "Task: hello"
+
+    def test_skill_dir_substituted(self, tmp_path):
+        from coding_agent.ui.slash_commands import _substitute_skill_args
+        content, _ = _substitute_skill_args("Dir: ${CLAUDE_SKILL_DIR}", "", tmp_path, "")
+        assert content == f"Dir: {tmp_path}"
+
+    def test_session_id_substituted(self):
+        from coding_agent.ui.slash_commands import _substitute_skill_args
+        content, _ = _substitute_skill_args("Session: ${CLAUDE_SESSION_ID}", "", None, "abc123")
+        assert content == "Session: abc123"
+
+    def test_no_placeholder_returns_false(self):
+        from coding_agent.ui.slash_commands import _substitute_skill_args
+        _, had = _substitute_skill_args("No placeholder here.", "arg", None, "")
+        assert had is False
+
+    def test_empty_args_leaves_placeholder(self):
+        from coding_agent.ui.slash_commands import _substitute_skill_args
+        content, had = _substitute_skill_args("Fix $ARGUMENTS", "", None, "")
+        assert content == "Fix "
+        assert had is True
+
+
+class TestPreprocessSkillContent:
+    """Tests for _preprocess_skill_content helper."""
+
+    def test_backtick_command_replaced(self):
+        from coding_agent.ui.slash_commands import _preprocess_skill_content
+        content = _preprocess_skill_content("Output: !`echo hello`")
+        assert content == "Output: hello"
+
+    def test_failed_command_shows_error(self):
+        from coding_agent.ui.slash_commands import _preprocess_skill_content
+        content = _preprocess_skill_content("!`exit 1`")
+        assert "[error:" in content
+
+    def test_no_commands_unchanged(self):
+        from coding_agent.ui.slash_commands import _preprocess_skill_content
+        original = "No shell commands here."
+        assert _preprocess_skill_content(original) == original
+
+    def test_multiple_commands_replaced(self):
+        from coding_agent.ui.slash_commands import _preprocess_skill_content
+        content = _preprocess_skill_content("A: !`echo foo`\nB: !`echo bar`")
+        assert "foo" in content
+        assert "bar" in content
