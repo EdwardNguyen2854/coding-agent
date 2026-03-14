@@ -8,7 +8,7 @@ import pytest
 import coding_agent.config.config as _config_module
 from coding_agent.config import AgentConfig
 from coding_agent.config.config import ModelCapabilities
-from coding_agent.core.llm import LLMClient
+from coding_agent.core.llm import LLMClient, _is_minimax_openrouter, _parse_minimax_tool_calls
 
 
 @pytest.fixture(autouse=True)
@@ -922,3 +922,188 @@ class TestSamplingParamsUnsupported:
             list(client.send_message_stream(sample_messages))
         call_kwargs = mock_completion.call_args[1]
         assert "top_p" not in call_kwargs
+
+
+class TestIsMinimaxOpenrouter:
+    """Unit tests for _is_minimax_openrouter helper."""
+
+    def test_matches_minimax_via_openrouter(self):
+        assert _is_minimax_openrouter("openrouter/minimax/minimax-m2.5") is True
+
+    def test_matches_minimax_m2_via_openrouter(self):
+        assert _is_minimax_openrouter("openrouter/minimax/minimax-m2") is True
+
+    def test_case_insensitive(self):
+        assert _is_minimax_openrouter("OpenRouter/MiniMax/MiniMax-M2.5") is True
+
+    def test_non_minimax_openrouter_model(self):
+        assert _is_minimax_openrouter("openrouter/openai/gpt-4o") is False
+
+    def test_minimax_without_openrouter(self):
+        assert _is_minimax_openrouter("minimax/MiniMax-M2.5") is False
+
+    def test_standard_openai_model(self):
+        assert _is_minimax_openrouter("litellm/gpt-4o") is False
+
+    def test_empty_string(self):
+        assert _is_minimax_openrouter("") is False
+
+
+class TestParseMinimaxToolCalls:
+    """Unit tests for _parse_minimax_tool_calls XML parser."""
+
+    def test_parses_single_tool_call(self):
+        content = (
+            "<minimax:tool_call>\n"
+            '<invoke name="read_file">\n'
+            '<parameter name="path">foo.py</parameter>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>"
+        )
+        calls = _parse_minimax_tool_calls(content)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "read_file"
+        assert calls[0]["arguments"] == {"path": "foo.py"}
+        assert calls[0]["id"].startswith("call_")
+
+    def test_parses_multiple_parameters(self):
+        content = (
+            "<minimax:tool_call>\n"
+            '<invoke name="run_shell">\n'
+            '<parameter name="command">ls</parameter>\n'
+            '<parameter name="cwd">/tmp</parameter>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>"
+        )
+        calls = _parse_minimax_tool_calls(content)
+        assert len(calls) == 1
+        assert calls[0]["arguments"] == {"command": "ls", "cwd": "/tmp"}
+
+    def test_parses_json_parameter_values(self):
+        content = (
+            "<minimax:tool_call>\n"
+            '<invoke name="write_file">\n'
+            '<parameter name="lines">["a", "b"]</parameter>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>"
+        )
+        calls = _parse_minimax_tool_calls(content)
+        assert calls[0]["arguments"]["lines"] == ["a", "b"]
+
+    def test_parses_multiple_tool_calls(self):
+        content = (
+            "<minimax:tool_call>\n"
+            '<invoke name="tool_a">\n'
+            '<parameter name="x">1</parameter>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>\n"
+            "<minimax:tool_call>\n"
+            '<invoke name="tool_b">\n'
+            '<parameter name="y">2</parameter>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>"
+        )
+        calls = _parse_minimax_tool_calls(content)
+        assert len(calls) == 2
+        assert calls[0]["name"] == "tool_a"
+        assert calls[1]["name"] == "tool_b"
+
+    def test_returns_empty_for_no_tool_calls(self):
+        assert _parse_minimax_tool_calls("Just some text, no tool calls here.") == []
+
+    def test_skips_block_without_invoke(self):
+        content = "<minimax:tool_call>no invoke tag here</minimax:tool_call>"
+        assert _parse_minimax_tool_calls(content) == []
+
+    def test_unique_ids_per_call(self):
+        content = (
+            "<minimax:tool_call>\n"
+            '<invoke name="tool_a"><parameter name="x">1</parameter></invoke>\n'
+            "</minimax:tool_call>\n"
+            "<minimax:tool_call>\n"
+            '<invoke name="tool_b"><parameter name="y">2</parameter></invoke>\n'
+            "</minimax:tool_call>"
+        )
+        calls = _parse_minimax_tool_calls(content)
+        assert calls[0]["id"] != calls[1]["id"]
+
+
+class TestMinimaxOpenRouterFallback:
+    """send_message_stream falls back to XML parsing for MiniMax-via-OpenRouter."""
+
+    def _make_minimax_config(self):
+        return AgentConfig(
+            model="openrouter/minimax/minimax-m2.5",
+            api_base="https://openrouter.ai/api/v1",
+        )
+
+    def _make_mock_response(self, content: str):
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = content
+        mock_response.choices[0].message.tool_calls = None
+        return mock_response
+
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
+    def test_parses_xml_tool_call_when_tool_calls_absent(self, mock_completion, mock_builder, sample_messages):
+        xml_content = (
+            "<minimax:tool_call>\n"
+            '<invoke name="read_file">\n'
+            '<parameter name="path">foo.py</parameter>\n'
+            "</invoke>\n"
+            "</minimax:tool_call>"
+        )
+        mock_completion.return_value = iter(_make_stream_chunks([xml_content]))
+        mock_builder.return_value = self._make_mock_response(xml_content)
+
+        client = LLMClient(self._make_minimax_config())
+        gen = client.send_message_stream(sample_messages)
+        list(gen)
+        try:
+            gen.send(None)
+        except StopIteration as exc:
+            result = exc.value
+        else:
+            result = client.last_response  # won't reach; use generator return
+            result = None
+
+        # Drive the generator to get the return value
+        gen2 = client.send_message_stream(sample_messages)
+        mock_completion.return_value = iter(_make_stream_chunks([xml_content]))
+        mock_builder.return_value = self._make_mock_response(xml_content)
+        try:
+            while True:
+                next(gen2)
+        except StopIteration as exc:
+            result = exc.value
+
+        assert len(result.tool_calls) == 1
+        assert result.tool_calls[0]["name"] == "read_file"
+        assert result.tool_calls[0]["arguments"] == {"path": "foo.py"}
+
+    @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
+    @patch("coding_agent.core.llm.litellm.completion")
+    def test_xml_fallback_not_triggered_for_non_minimax(self, mock_completion, mock_builder, config, sample_messages):
+        """Non-MiniMax models with empty tool_calls and XML-like content are unaffected."""
+        xml_content = (
+            "<minimax:tool_call>"
+            '<invoke name="read_file"><parameter name="path">foo.py</parameter></invoke>'
+            "</minimax:tool_call>"
+        )
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = xml_content
+        mock_response.choices[0].message.tool_calls = None
+        mock_completion.return_value = iter(_make_stream_chunks([xml_content]))
+        mock_builder.return_value = mock_response
+
+        client = LLMClient(config)  # model = litellm/gpt-4o
+        try:
+            gen = client.send_message_stream(sample_messages)
+            while True:
+                next(gen)
+        except StopIteration as exc:
+            result = exc.value
+
+        assert result.tool_calls == []
