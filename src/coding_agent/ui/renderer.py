@@ -28,12 +28,15 @@ class _LazyMarkdown:
     Rich Live calls ``__rich_console__`` at most ``refresh_per_second`` times.
     This avoids building a new ``Markdown`` object on every token received.
     While waiting for the first token it renders an animated spinner instead.
+    When thinking tokens arrive they are shown in a dim panel above the content.
     """
 
     def __init__(self) -> None:
         self._text = ""
         self._cached: Markdown | None = None
         self._thinking = False
+        self._thinking_text = ""
+        self._thinking_cached: Panel | None = None
         self._spinner = Spinner("dots", text=Text(" Thinking...", style="dim"))
 
     def start_thinking(self) -> None:
@@ -46,13 +49,29 @@ class _LazyMarkdown:
         self._text += delta
         self._cached = None
 
+    def append_thinking(self, delta: str) -> None:
+        """Append thinking text, invalidate the thinking cache, and stop the spinner."""
+        self._thinking = False
+        self._thinking_text += delta
+        self._thinking_cached = None
+
     def __rich_console__(self, console, options):
-        if self._thinking and not self._text:
+        if self._thinking and not self._text and not self._thinking_text:
             yield from self._spinner.__rich_console__(console, options)
             return
-        if self._cached is None:
-            self._cached = Markdown(self._text)
-        yield from self._cached.__rich_console__(console, options)
+        if self._thinking_text:
+            if self._thinking_cached is None:
+                self._thinking_cached = Panel(
+                    Text(self._thinking_text, style="dim"),
+                    title=Text("Thinking", style="dim italic"),
+                    border_style="dim",
+                    padding=(0, 1),
+                )
+            yield from self._thinking_cached.__rich_console__(console, options)
+        if self._text:
+            if self._cached is None:
+                self._cached = Markdown(self._text)
+            yield from self._cached.__rich_console__(console, options)
 
 
 class StreamingDisplay:
@@ -88,6 +107,10 @@ class StreamingDisplay:
         """Append new text; Markdown is rebuilt only on the next Live refresh."""
         self._renderable.append(delta)
 
+    def update_thinking(self, delta: str) -> None:
+        """Append thinking text shown in a dim panel above the response."""
+        self._renderable.append_thinking(delta)
+
     @property
     def full_text(self) -> str:
         """Return the accumulated text."""
@@ -118,6 +141,10 @@ class PlainStreamingDisplay:
         self._text += delta
         print(delta, end="", flush=True)
 
+    def update_thinking(self, delta: str) -> None:
+        """Print thinking token prefixed with a dim marker (plain fallback)."""
+        print(delta, end="", flush=True)
+
     @property
     def full_text(self) -> str:
         """Return the accumulated text."""
@@ -137,6 +164,7 @@ class BufferedMarkdownDisplay:
     def __init__(self, console: Console) -> None:
         self._console = console
         self._text = ""
+        self._thinking_text = ""
         self._status: Status | None = None
 
     def __enter__(self) -> "BufferedMarkdownDisplay":
@@ -146,6 +174,13 @@ class BufferedMarkdownDisplay:
         if self._status is not None:
             self._status.stop()
             self._status = None
+        if self._thinking_text.strip():
+            self._console.print(Panel(
+                Text(self._thinking_text, style="dim"),
+                title=Text("Thinking", style="dim italic"),
+                border_style="dim",
+                padding=(0, 1),
+            ))
         if self._text.strip():
             self._console.print(Markdown(self._text))
 
@@ -162,6 +197,13 @@ class BufferedMarkdownDisplay:
             self._status.stop()
             self._status = None
         self._text += delta
+
+    def update_thinking(self, delta: str) -> None:
+        """Buffer thinking token; stop spinner on first thinking token."""
+        if self._status is not None:
+            self._status.stop()
+            self._status = None
+        self._thinking_text += delta
 
     @property
     def full_text(self) -> str:
@@ -185,7 +227,7 @@ class _TimedSpinnerRenderable:
         elapsed = time.monotonic() - self._start
         frame = _SPINNER_FRAMES[int(elapsed * 10) % len(_SPINNER_FRAMES)]
         yield Text.assemble(
-            (frame, "dim #818CF8"),
+            (frame, "dim blue"),
             (f" {self._message}", "dim"),
             (f"  {elapsed:.1f}s", "dim"),
         )
@@ -303,7 +345,7 @@ class Renderer:
         """
         self.console.print()
         self.console.print(Text.assemble(
-            ("You", "bold #818CF8"),
+            ("You", "bold blue"),
             (" > ", "green"),
             (text, ""),
         ), highlight=False)
@@ -316,23 +358,23 @@ class Renderer:
             version: Application version string.
         """
         content = Text.assemble(
-            ("coding-agent", "bold #818CF8"),
+            ("coding-agent", "bold blue"),
             ("  v" + version, "dim"),
         )
         self.console.print(Panel(
             Align.left(content),
-            border_style="#818CF8 dim",
+            border_style="blue dim",
             expand=False,
             padding=(0, 2),
         ))
         self.console.print(
             Text.assemble(
                 ("Type ", "dim"),
-                ("/help", "#818CF8"),
+                ("/help", "blue"),
                 (" for commands  •  ", "dim"),
-                ("Tab", "#818CF8"),
+                ("Tab", "blue"),
                 (" to autocomplete  •  ", "dim"),
-                ("Ctrl+C", "#818CF8"),
+                ("Ctrl+C", "blue"),
                 (" to interrupt", "dim"),
             )
         )
@@ -375,7 +417,7 @@ class Renderer:
             tool_name: Name of the tool being executed
             tool_args: Dictionary of tool arguments
         """
-        self.console.print(f"[dim]→[/dim] [#818CF8]{tool_name}[/#818CF8]", highlight=False)
+        self.console.print(f"[dim]→[/dim] [blue]{tool_name}[/blue]", highlight=False)
         for key, value in tool_args.items():
             value_str = str(value).replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
             if len(value_str) > _MAX_ARG_DISPLAY:

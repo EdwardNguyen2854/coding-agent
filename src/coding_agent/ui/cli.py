@@ -9,7 +9,13 @@ import click
 # --- Early init: truststore + proxy must be set before importing litellm/openai/httpx ---
 try:
     import truststore
-    truststore.inject_into_ssl()
+    import httpx as _httpx
+    # httpx < 0.28 does not accept ssl.SSLContext as the `verify` argument, which
+    # causes a TypeError when truststore's injected SSLContext propagates through
+    # litellm's internal httpx client construction.  Only inject when safe to do so.
+    _ver = tuple(int(x) for x in _httpx.__version__.split(".")[:2])
+    if _ver >= (0, 28):
+        truststore.inject_into_ssl()
 except Exception:
     pass
 
@@ -61,8 +67,40 @@ from coding_agent import __version__
 from coding_agent.ui.sidebar import make_toolbar
 from coding_agent.workflow import WorkflowManager, WorkflowState
 
+import re as _re
+
 import litellm
 litellm.suppress_debug_info = True
+
+
+def _extract_skill_suggestion(response: str, skills: dict) -> str | None:
+    """Return skill name if agent embedded a suggestion marker."""
+    match = _re.search(
+        r'\*\*Skill suggestion:\*\*\s*`/([a-z0-9_-]+)`',
+        response, _re.IGNORECASE
+    )
+    if match:
+        name = match.group(1)
+        return name if name in skills else None
+    return None
+
+
+def _handle_skill_suggestion(response, skills, conversation, session_manager,
+                              renderer, llm_client, agent):
+    skill_name = _extract_skill_suggestion(response, skills)
+    if not skill_name:
+        return
+    skill = skills[skill_name]
+    desc = f" — {skill.description}" if skill.description else ""
+    renderer.print_info(f"\nSuggested skill: /{skill_name}{desc}")
+    try:
+        answer = input("Run this skill? [y/N] ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return
+    if answer in ("y", "yes"):
+        execute_command(f"/{skill_name}", conversation, session_manager,
+                        renderer, llm_client, agent)
+
 
 def _run_first_time_setup(
     model_override: str | None,
@@ -131,6 +169,7 @@ PROMPT_STYLE = PTStyle.from_dict({
     "user": "ansiblue bold",
     "arrow": "ansigreen",
     "rprompt": "#888888",
+    "bottom-toolbar": "bg:#262626 #c6c6c6",
 })
 
 
@@ -209,7 +248,8 @@ def _get_system_prompt() -> tuple[str, list[str]]:
 @click.option("--progress-style", type=click.Choice(["bar", "dots", "minimal"]), default="bar", help="Progress bar style")
 @click.option("--output/--no-output", default=True, help="Enable enhanced tool output display")
 @click.option("--output-max-lines", default=None, type=int, help="Maximum lines per tool output")
-def cli(ctx, model, api_base, temperature, max_output_tokens, top_p, resume, session_id, ollama_model, progress, progress_style, output, output_max_lines):
+@click.option("--thinking-budget", "thinking_budget_tokens", default=None, type=int, help="Enable extended thinking with this token budget (Claude models only)")
+def cli(ctx, model, api_base, temperature, max_output_tokens, top_p, resume, session_id, ollama_model, progress, progress_style, output, output_max_lines, thinking_budget_tokens):
     """Coding-Agent CLI."""
     ctx.ensure_object(dict)
     ctx.obj["model"] = model
@@ -224,6 +264,7 @@ def cli(ctx, model, api_base, temperature, max_output_tokens, top_p, resume, ses
     ctx.obj["progress_style"] = progress_style
     ctx.obj["output"] = output
     ctx.obj["output_max_lines"] = output_max_lines
+    ctx.obj["thinking_budget_tokens"] = thinking_budget_tokens
     if ctx.invoked_subcommand is None:
         ctx.invoke(run)
 
@@ -252,7 +293,7 @@ def skills(choice):
     
     def render_table(selected_indices: list[int] | None = None):
         table = Table(title="Skills Configuration", box=box.ROUNDED, show_lines=True)
-        table.add_column("#", style="#818CF8", width=4)
+        table.add_column("#", style="blue", width=4)
         table.add_column("Skill", style="bold")
         table.add_column("Enabled", justify="center", width=8)
         
@@ -336,8 +377,9 @@ def skills(choice):
 @click.option("--progress-style", type=click.Choice(["bar", "dots", "minimal"]), default="bar", help="Progress bar style")
 @click.option("--output/--no-output", default=True, help="Enable enhanced tool output display")
 @click.option("--output-max-lines", default=None, type=int, help="Maximum lines per tool output")
+@click.option("--thinking-budget", "thinking_budget_tokens", default=None, type=int, help="Enable extended thinking with this token budget (Claude models only)")
 @click.pass_context
-def run(ctx, model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None, progress: bool, progress_style: str, output: bool, output_max_lines: int | None) -> None:
+def run(ctx, model: str | None, api_base: str | None, temperature: float | None, max_output_tokens: int | None, top_p: float | None, resume: bool, session_id: str | None, ollama_model: str | None, progress: bool, progress_style: str, output: bool, output_max_lines: int | None, thinking_budget_tokens: int | None) -> None:
     """AI coding agent - self-hosted, model-agnostic."""
     # Use parent context options as defaults if not provided
     parent = ctx.parent
@@ -366,6 +408,8 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             output = parent.obj.get("output")
         if output_max_lines is None:
             output_max_lines = parent.obj.get("output_max_lines")
+        if thinking_budget_tokens is None:
+            thinking_budget_tokens = parent.obj.get("thinking_budget_tokens")
 
     set_progress_config_override(
         lambda: ProgressConfig(
@@ -408,6 +452,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             top_p=top_p,
             output_enabled=output,
             output_max_lines=output_max_lines,
+            thinking_budget_tokens=thinking_budget_tokens,
         )
     except ConfigError as e:
         click.echo(str(e), err=True)
@@ -454,6 +499,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     register_spawn_sub_agent_tool(llm_client, session_manager, config, workspace_root, renderer)
 
     # Load skills from SKILL.md and register as slash commands
+    filtered_skills: dict = {}
     skills, skill_files = load_skills()
     if skills:
         enabled_skills = config.skills.get_enabled()
@@ -461,6 +507,21 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         if filtered_skills:
             register_skills(filtered_skills, agent)
             renderer.print_info(f"Loaded {len(filtered_skills)} skills")
+            # Inject suggestible skills into system prompt
+            suggestible = {
+                name: sk for name, sk in filtered_skills.items()
+                if not sk.disable_model_invocation
+            }
+            if suggestible:
+                lines = "\n".join(f"- /{n}: {sk.description}" for n, sk in suggestible.items())
+                conversation._messages[0]["content"] += (
+                    "\n\n## Available Skills\n"
+                    "When the user's request would clearly benefit from one of these skills, "
+                    "end your response with exactly this line (and nothing after it):\n"
+                    "**Skill suggestion:** `/skill-name`\n\n"
+                    "Only suggest when genuinely helpful. Never suggest for trivial requests.\n\n"
+                    + lines
+                )
         else:
             renderer.print_info("No skills enabled in config. Skipping skill loading.")
     else:
@@ -558,7 +619,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     # Slash command autocomplete
     slash_completer = SlashCommandCompleter()
 
-    from coding_agent.tools.spawn_sub_agent import get_active_sub_agent_name
+    from coding_agent.tools.spawn_sub_agent import get_active_sub_agent_name, is_team_mode
     toolbar_func = make_toolbar(
         conversation=conversation,
         workflow=current_workflow,
@@ -566,6 +627,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         context_limit=128000,
         get_active_sub_agent=get_active_sub_agent_name,
         get_model=lambda: llm_client.model if llm_client else None,
+        get_team_mode=is_team_mode,
     )
 
     from coding_agent.ui.interrupt import get_interrupt_handler, trigger_interrupt
@@ -580,7 +642,6 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     # Try prompt_toolkit, fallback to stdin if it fails (e.g., in non-Windows console)
     try:
         from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.keys import Keys
         from prompt_toolkit.history import FileHistory
         from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
         from prompt_toolkit.formatted_text import HTML
@@ -599,14 +660,25 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
             handle_interrupt()
             event.app.current_buffer.text = ""
 
+        @key_bindings.add('c-d')
+        def _(event):
+            """Handle Ctrl+D — exit when input is empty."""
+            if not event.app.current_buffer.text:
+                event.app.exit(exception=EOFError())
+
         @key_bindings.add('c-l')
         def _(event):
             """Handle Ctrl+L — clear terminal screen."""
             event.app.renderer.clear()
 
-        @key_bindings.add('s-return')
+        @key_bindings.add('c-m')
         def _(event):
-            """Handle Shift+Enter — insert newline for multi-line input."""
+            """Handle Enter — submit input."""
+            event.current_buffer.validate_and_handle()
+
+        @key_bindings.add('escape', 'enter')
+        def _(event):
+            """Handle Alt+Enter — insert newline for multi-line input."""
             event.current_buffer.newline()
 
         DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -615,6 +687,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         session = PromptSession(
             completer=slash_completer,
             complete_while_typing=True,
+            multiline=True,
             style=PROMPT_STYLE,
             key_bindings=key_bindings,
             history=FileHistory(str(history_path)),
@@ -622,11 +695,11 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         )
         input_func = lambda: session.prompt(
             STYLED_PROMPT,
-            rprompt=toolbar_func,
+            bottom_toolbar=toolbar_func,
             placeholder=HTML('<ansigray>Ask anything, or /help for commands</ansigray>'),
         )
-    except Exception:
-        # Fallback for non-Windows console environments
+    except Exception as _pt_err:
+        renderer.print_warning(f"prompt_toolkit setup failed ({_pt_err}), using basic input (no toolbar/autocomplete)")
         input_func = lambda: input("You > ")
 
     while True:
@@ -668,7 +741,13 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
 
         # Delegate to Agent for ReAct loop
         try:
-            agent.run(text)
+            from coding_agent.ui.persistent_bar import PersistentStatusBar
+            with PersistentStatusBar(toolbar_func):
+                response = agent.run(text)
+            # Handle skill suggestion embedded in response
+            if response and filtered_skills:
+                _handle_skill_suggestion(response, filtered_skills, conversation,
+                                         session_manager, renderer, llm_client, agent)
             # Show status line after response
             token_count = conversation.token_count
             session_id = session_data.get("id") if session_data else None

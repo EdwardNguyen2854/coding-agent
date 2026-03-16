@@ -78,6 +78,14 @@ class ShellTool:
             return ToolResult.failure("EXEC_ERROR", f"Execution failed: {exc}")
 
         success = proc.returncode == 0
+
+        msg_parts = [f"Command exited with code {proc.returncode}"]
+        if proc.stdout:
+            msg_parts.append(f"stdout:\n{proc.stdout.rstrip()}")
+        if proc.stderr:
+            msg_parts.append(f"stderr:\n{proc.stderr.rstrip()}")
+        message = "\n".join(msg_parts)
+
         return ToolResult.success(
             data={
                 "command": command,
@@ -86,7 +94,7 @@ class ShellTool:
                 "stderr": proc.stderr,
                 "success": success,
             },
-            message=f"Command exited with code {proc.returncode}",
+            message=message,
             warnings=(
                 [] if success
                 else [f"Command exited with non-zero code {proc.returncode}"]

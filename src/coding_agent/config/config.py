@@ -175,6 +175,9 @@ class AgentConfig(BaseModel):
     # Context management
     max_context_tokens: int = 128000
 
+    # Extended thinking (Claude only): token budget for reasoning. None = disabled.
+    thinking_budget_tokens: int | None = None
+
     @field_validator("temperature")
     @classmethod
     def validate_temperature(cls, v: float) -> float:
@@ -300,6 +303,7 @@ def apply_cli_overrides(
     top_p: float | None = None,
     output_enabled: bool | None = None,
     output_max_lines: int | None = None,
+    thinking_budget_tokens: int | None = None,
 ) -> AgentConfig:
     """Apply CLI flag overrides to config. Returns a new AgentConfig instance.
 
@@ -316,6 +320,8 @@ def apply_cli_overrides(
         overrides["max_output_tokens"] = max_output_tokens
     if top_p is not None:
         overrides["top_p"] = top_p
+    if thinking_budget_tokens is not None:
+        overrides["thinking_budget_tokens"] = thinking_budget_tokens
     if output_enabled is not None or output_max_lines is not None:
         output_overrides = {}
         if output_enabled is not None:

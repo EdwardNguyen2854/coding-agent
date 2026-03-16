@@ -1,10 +1,13 @@
 """Tool output rendering functions."""
 
 import json
+import re
+from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
@@ -19,7 +22,7 @@ from coding_agent.ui.output.formatter import (
     detect_status,
     format_timing,
     truncate_output_text,
-)
+)  # noqa: F401 — re-exported for callers
 
 
 def render_tool_header(
@@ -46,18 +49,18 @@ def render_tool_header(
     """
     style = "green" if status == ToolStatus.SUCCESS else \
             "yellow" if status == ToolStatus.WARNING else \
-            "red" if status == ToolStatus.ERROR else "#818CF8"
+            "red" if status == ToolStatus.ERROR else "blue"
 
     parts = []
     if status_indicators:
         parts.append(f"[{style}]{status_indicator}[/{style}]")
-    parts.append(f"[#818CF8]{tool_name}[/#818CF8]")
-    
+    parts.append(f"[blue]{tool_name}[/blue]")
+
     if show_timing and timing_ms is not None:
         timing_str = format_timing(timing_ms, timing_format)
         parts.append(f"[dim]{timing_str}[/dim]")
-    
-    console.print(" ".join(parts))
+
+    console.print(Rule(" ".join(parts), style="dim", align="left"))
 
 
 def render_json_output(
@@ -152,6 +155,118 @@ def render_tree_output(
             console.print(f"  {line}")
 
 
+def render_shell_output(
+    console: Console,
+    output: str,
+) -> None:
+    """Render shell tool output, splitting stdout/stderr visually.
+
+    Args:
+        console: Rich Console instance
+        output: Shell output string (may be JSON)
+    """
+    try:
+        data = json.loads(output)
+        stdout = data.get("output") or data.get("stdout", "")
+        stderr = data.get("stderr", "")
+        exit_code = data.get("exit_code") if data.get("exit_code") is not None else data.get("returncode")
+        message = data.get("message") or data.get("error", "")
+
+        if stdout:
+            console.print(f"[dim]stdout ▸[/dim] {stdout}")
+        if stderr:
+            console.print(f"[yellow]stderr ▸[/yellow] {stderr}")
+        if exit_code is not None and exit_code != 0:
+            console.print(f"[red]exit {exit_code}[/red]")
+        if message and not stdout and not stderr:
+            console.print(message)
+        if not stdout and not stderr and not message:
+            console.print(output)
+    except (json.JSONDecodeError, ValueError):
+        console.print(output)
+
+
+_EXT_LEXER: dict[str, str] = {
+    ".py": "python", ".js": "javascript", ".ts": "typescript",
+    ".tsx": "tsx", ".jsx": "jsx", ".json": "json", ".yaml": "yaml",
+    ".yml": "yaml", ".md": "markdown", ".sh": "bash", ".bash": "bash",
+    ".html": "html", ".css": "css", ".rs": "rust", ".go": "go",
+    ".java": "java", ".cpp": "cpp", ".c": "c", ".h": "c",
+    ".rb": "ruby", ".php": "php", ".sql": "sql", ".xml": "xml",
+    ".toml": "toml", ".ini": "ini",
+}
+
+
+def render_code_output(
+    console: Console,
+    output: str,
+    syntax_highlight: bool = True,
+) -> None:
+    """Render file content with syntax highlighting.
+
+    Args:
+        console: Rich Console instance
+        output: File content or JSON wrapper
+        syntax_highlight: Whether to apply syntax highlighting
+    """
+    file_path: str | None = None
+    content = output
+
+    try:
+        data = json.loads(output)
+        if isinstance(data, dict):
+            file_path = data.get("path") or data.get("file_path")
+            content = data.get("content") or data.get("data", output)
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    if syntax_highlight:
+        lexer = "text"
+        if file_path:
+            lexer = _EXT_LEXER.get(Path(file_path).suffix.lower(), "text")
+        console.print(Syntax(content, lexer, line_numbers=True, theme="ansi_dark"))
+    else:
+        console.print(content)
+
+
+_GREP_LINE = re.compile(r"^([^:]+):(\d+):(.*)$")
+
+
+def render_grep_output(
+    console: Console,
+    output: str,
+) -> None:
+    """Render grep results as structured columns grouped by file.
+
+    Args:
+        console: Rich Console instance
+        output: Grep output string
+    """
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    last_file: str | None = None
+    has_matches = False
+
+    for line in output.split("\n"):
+        if not line.strip():
+            continue
+        m = _GREP_LINE.match(line)
+        if m:
+            has_matches = True
+            file, lineno, content = m.group(1), m.group(2), m.group(3)
+            if file != last_file:
+                if last_file is not None:
+                    table.add_row(Text("", style="dim"), Text("", style="dim"), Text("", style="dim"))
+                last_file = file
+            table.add_row(Text(file, style="cyan"), Text(lineno, style="yellow"), content)
+        else:
+            table.add_row(Text(line, style="dim"), Text("", style="dim"), Text("", style="dim"))
+
+    if has_matches:
+        console.print(table)
+    else:
+        console.print(output)
+
+
 def render_truncated_hint(
     console: Console,
     truncated_lines: int,
@@ -202,8 +317,15 @@ def render_tool_output(
         render_json_output(console, formatted.content, config.syntax_highlight)
     elif formatted.output_type == OutputType.DIFF:
         render_diff_output(console, formatted.content, config.syntax_highlight)
+    elif formatted.output_type == OutputType.SHELL:
+        render_shell_output(console, formatted.content)
+    elif formatted.output_type == OutputType.CODE:
+        render_code_output(console, formatted.content, config.syntax_highlight)
     elif formatted.output_type == OutputType.TABLE:
-        render_table_output(console, formatted.content, tool_name)
+        if tool_name == "grep":
+            render_grep_output(console, formatted.content)
+        else:
+            render_table_output(console, formatted.content, tool_name)
     elif formatted.output_type == OutputType.TREE:
         render_tree_output(console, formatted.content)
     else:

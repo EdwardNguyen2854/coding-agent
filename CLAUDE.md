@@ -8,7 +8,7 @@ This document provides context, conventions, and workflows for AI assistants wor
 
 **coding-agent** is a local AI coding assistant CLI built in Python. It implements a ReAct (Reason + Act) agent loop backed by any OpenAI-compatible LLM endpoint (via litellm), with a rich terminal UI, persistent sessions, 26 built-in tools, a workflow engine, and a multi-agent system.
 
-- **Version:** 0.11.3
+- **Version:** see `pyproject.toml`
 - **License:** MIT
 - **Entry point:** `coding-agent` CLI command
 - **Python requirement:** 3.10+

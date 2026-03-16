@@ -1,7 +1,7 @@
 # Coding Agent
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](#)
-[![Version](https://img.shields.io/badge/version-0.11.3-2ea44f.svg)](#)
+[![Version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FEdwardNguyen2854%2Fcoding-agent%2Fmain%2Fpyproject.toml&query=%24.project.version&label=version&color=2ea44f)](#)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 `coding-agent` is a self-hosted, model-agnostic AI coding assistant for terminal workflows.

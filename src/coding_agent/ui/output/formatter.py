@@ -21,6 +21,7 @@ class OutputType(Enum):
     TABLE = "table"
     TREE = "tree"
     ERROR = "error"
+    SHELL = "shell"
 
 
 class ToolStatus(Enum):
@@ -56,31 +57,37 @@ def detect_output_type(tool_name: str, output: str) -> OutputType:
     
     if tool_name in ("file_patch", "git_diff"):
         return OutputType.DIFF
-    
+
+    if tool_name in ("shell", "safe_shell", "run_command"):
+        return OutputType.SHELL
+
+    if tool_name == "file_read":
+        return OutputType.CODE
+
     if tool_name == "grep":
         if ":" in output and ("-" in output or re.search(r"\d+:", output)):
             return OutputType.TABLE
-    
+
     if tool_name in ("run_tests", "run_lint", "typecheck"):
         return OutputType.TABLE
-    
+
     if tool_name == "file_list":
         return OutputType.TREE
-    
+
     if output.startswith("{") or output.startswith("["):
         try:
             json.loads(output)
             return OutputType.JSON
         except (json.JSONDecodeError, ValueError):
             pass
-    
+
     if tool_name == "workspace_info":
         try:
             json.loads(output)
             return OutputType.JSON
         except (json.JSONDecodeError, ValueError):
             pass
-    
+
     return OutputType.PLAIN
 
 
@@ -99,7 +106,7 @@ def detect_status(output: str, is_error: bool = False) -> ToolStatus:
     
     output_lower = output.lower()
     
-    if "error" in output_lower or "failed" in output_lower:
+    if ("error" in output_lower and "no error" not in output_lower) or "failed" in output_lower:
         return ToolStatus.ERROR
     
     if "warning" in output_lower or "warn" in output_lower:
@@ -252,6 +259,6 @@ class ToolOutputFormatter:
             ToolStatus.SUCCESS: "green",
             ToolStatus.WARNING: "yellow",
             ToolStatus.ERROR: "red",
-            ToolStatus.INFO: "#818CF8",
+            ToolStatus.INFO: "cyan",
         }
-        return styles.get(status, "#818CF8")
+        return styles.get(status, "blue")

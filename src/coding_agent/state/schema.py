@@ -76,3 +76,16 @@ def create_tables(db: "Database") -> None:
     for statement in ALL_SCHEMA_STATEMENTS:
         db.execute(statement)
     db.commit()
+
+
+def add_messages_json_column(db: "Database") -> None:
+    """Add messages_json column to sessions table if it doesn't exist.
+
+    Stores the full conversation (including tool_calls) as a JSON blob so that
+    session resume restores complete history without relying on the messages table.
+    """
+    try:
+        db.execute("ALTER TABLE sessions ADD COLUMN messages_json TEXT")
+        db.commit()
+    except Exception:
+        pass  # Column already exists

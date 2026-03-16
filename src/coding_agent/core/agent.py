@@ -16,6 +16,22 @@ if TYPE_CHECKING:
 from coding_agent.ui.interrupt import is_interrupted
 from coding_agent.ui.output import ToolOutputFormatter
 
+
+class _ContentToolCall:
+    """Adapter wrapping a plain-dict tool call to match litellm's object interface."""
+
+    class _Function:
+        def __init__(self, name: str, arguments: str) -> None:
+            self.name = name
+            self.arguments = arguments
+
+    def __init__(self, tc: dict) -> None:
+        self.id = tc["id"]
+        self.function = self._Function(
+            name=tc["name"],
+            arguments=json.dumps(tc["arguments"]) if not isinstance(tc["arguments"], str) else tc["arguments"],
+        )
+
 _log = logging.getLogger(__name__)
 from coding_agent.core.llm import ModelRejectionError
 from coding_agent.core.permissions import PermissionSystem
@@ -77,10 +93,13 @@ class Agent:
         try:
             with self.renderer.render_streaming_live() as display:
                 display.start_thinking()
-                for delta in self.llm_client.send_message_stream(messages, tools=tools):
+                for token in self.llm_client.send_message_stream(messages, tools=tools):
                     if is_interrupted():
                         break
-                    display.update(delta)
+                    if token.is_thinking:
+                        display.update_thinking(token.text)
+                    else:
+                        display.update(token.text)
             return True
         except ModelRejectionError as e:
             if self._has_tool_messages(messages):
@@ -89,10 +108,13 @@ class Agent:
                 try:
                     with self.renderer.render_streaming_live() as display:
                         display.start_thinking()
-                        for delta in self.llm_client.send_message_stream(simplified, tools=None):
+                        for token in self.llm_client.send_message_stream(simplified, tools=None):
                             if is_interrupted():
                                 break
-                            display.update(delta)
+                            if token.is_thinking:
+                                display.update_thinking(token.text)
+                            else:
+                                display.update(token.text)
                     return True
                 except Exception as retry_err:
                     self.renderer.print_error(f"Error: {str(retry_err)}")
@@ -122,6 +144,7 @@ class Agent:
         last_tool_sig: str | None = None
         repeated_count = 0
         max_repeated = 4
+        nudge_sent = False
 
         while True:
             if is_interrupted():
@@ -156,6 +179,14 @@ class Agent:
             tool_calls = response.choices[0].message.tool_calls
 
             if not tool_calls:
+                # Fallback: use tool calls parsed from content (e.g. MiniMax via Ollama)
+                llm_resp = self.llm_client.last_llm_response
+                if llm_resp and llm_resp.tool_calls:
+                    tool_calls = [_ContentToolCall(tc) for tc in llm_resp.tool_calls]
+                    # Strip the raw JSON from the displayed message content
+                    assistant_message = ""
+
+            if not tool_calls:
                 self.conversation.add_message("assistant", assistant_message or "")
                 self.renderer.console.print()  # blank line after response
                 self._save_session()
@@ -172,6 +203,7 @@ class Agent:
                     return ""
             else:
                 repeated_count = 0
+                nudge_sent = False
                 last_tool_sig = tool_sig
 
             # Add assistant message with tool_calls BEFORE tool results
@@ -186,6 +218,19 @@ class Agent:
                     self.conversation.add_message("assistant", "[Interrupted by user during tool execution]")
                     return ""
                 self._handle_tool_call(tc)
+
+            # After first repeat, inject a nudge so the model tries a different approach
+            if repeated_count == 1 and not nudge_sent:
+                nudge_sent = True
+                self.renderer.print_warning(
+                    "\nHint: the same tool call is failing repeatedly. Trying a different approach..."
+                )
+                self.conversation.add_message(
+                    "user",
+                    "The previous tool call failed and was repeated with the same arguments. "
+                    "Please try a different approach — for example, use a different command, "
+                    "check the error output above, or investigate why it is failing.",
+                )
 
             if self.consecutive_failures >= self.max_retries:
                 return ""

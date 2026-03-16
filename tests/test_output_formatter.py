@@ -30,9 +30,16 @@ class TestOutputTypeDetection:
         assert detect_output_type("run_lint", "errors: 0") == OutputType.TABLE
         assert detect_output_type("typecheck", "Found 0 errors") == OutputType.TABLE
 
+    def test_detect_shell(self):
+        assert detect_output_type("shell", "output") == OutputType.SHELL
+        assert detect_output_type("safe_shell", "output") == OutputType.SHELL
+        assert detect_output_type("run_command", "output") == OutputType.SHELL
+
+    def test_detect_code(self):
+        assert detect_output_type("file_read", "some content") == OutputType.CODE
+
     def test_detect_plain_default(self):
-        assert detect_output_type("file_read", "some content") == OutputType.PLAIN
-        assert detect_output_type("shell", "output") == OutputType.PLAIN
+        assert detect_output_type("unknown_tool", "some content") == OutputType.PLAIN
 
 
 class TestStatusDetection:
@@ -44,6 +51,11 @@ class TestStatusDetection:
     def test_error_status(self):
         assert detect_status("error: something failed", is_error=True) == ToolStatus.ERROR
         assert detect_status("Failed to connect to server") == ToolStatus.ERROR
+        assert detect_status("error occurred") == ToolStatus.ERROR
+
+    def test_no_false_positive_on_no_errors(self):
+        # "no errors found" should NOT trigger ERROR status
+        assert detect_status("no errors found") != ToolStatus.ERROR
 
     def test_warning_status(self):
         assert detect_status("warning: deprecated API") == ToolStatus.WARNING

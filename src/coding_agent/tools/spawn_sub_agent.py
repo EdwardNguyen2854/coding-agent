@@ -197,8 +197,8 @@ class SpawnSubAgentTool:
             ctx.renderer.console.print(
                 Panel(
                     Text(summary_text),
-                    title=f"[bold #818CF8]Sub-agent: {name}[/] — done",
-                    border_style="#818CF8",
+                    title=f"[bold blue]Sub-agent: {name}[/] — done",
+                    border_style="blue",
                     expand=False,
                 )
             )

@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from coding_agent.core.agent import Agent
-from coding_agent.core.llm import ModelRejectionError
+from coding_agent.core.llm import ModelRejectionError, StreamToken
 
 
 def _make_mock_display():
@@ -39,6 +39,7 @@ class TestAgent:
         mock_get_tools.return_value = []
         mock_llm = MagicMock()
         mock_llm.send_message_stream.return_value = iter([])
+        mock_llm.last_llm_response = None
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "Hello"
@@ -63,6 +64,7 @@ class TestAgent:
         mock_get_tools.return_value = []
         mock_llm = MagicMock()
         mock_llm.send_message_stream.return_value = iter([])
+        mock_llm.last_llm_response = None
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "Final response"
@@ -98,7 +100,7 @@ class TestAgent:
         """run() uses render_streaming_live() for streaming output."""
         mock_get_tools.return_value = []
         mock_llm = MagicMock()
-        mock_llm.send_message_stream.return_value = iter(["Hello"])
+        mock_llm.send_message_stream.return_value = iter([StreamToken(text="Hello")])
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
         mock_response.choices[0].message.content = "Hello"

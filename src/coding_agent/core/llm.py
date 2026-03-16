@@ -18,6 +18,99 @@ def _is_minimax_openrouter(model: str) -> bool:
     return "openrouter" in m and "minimax" in m
 
 
+def _is_minimax(model: str) -> bool:
+    """True for any MiniMax model (OpenRouter or otherwise)."""
+    return "minimax" in model.lower()
+
+
+def _parse_minimax_json_tool_calls(content: str) -> list[dict]:
+    """Parse MiniMax JSON tool-call format from message content.
+
+    MiniMax (via Ollama or similar) returns tool calls as JSON objects in content:
+        {"name": "fn_name", "arguments": {...}}
+    or as a JSON array:
+        [{"name": "fn_name", "arguments": {...}}, ...]
+    or as multiple space/newline-separated JSON objects:
+        {"name": "fn1", ...} {"name": "fn2", ...}
+    """
+    tool_calls = []
+    content = content.strip()
+
+    def _append(item: dict) -> None:
+        if isinstance(item, dict) and "name" in item:
+            tool_calls.append({
+                "id": f"call_{uuid.uuid4().hex[:8]}",
+                "name": item["name"],
+                "arguments": item.get("arguments", {}),
+            })
+
+    # Try parsing as a single value (object or array) first
+    try:
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            _append(parsed)
+        elif isinstance(parsed, list):
+            for item in parsed:
+                _append(item)
+        return tool_calls
+    except json.JSONDecodeError:
+        pass
+
+    # Fall back to scanning for JSON objects anywhere in the content
+    # (MiniMax sometimes prefixes tool calls with explanatory text)
+    decoder = json.JSONDecoder()
+    idx = 0
+    while idx < len(content):
+        # Advance to the next '{' or '['
+        next_brace = content.find("{", idx)
+        next_bracket = content.find("[", idx)
+        candidates = [p for p in (next_brace, next_bracket) if p != -1]
+        if not candidates:
+            break
+        idx = min(candidates)
+        try:
+            obj, end_idx = decoder.raw_decode(content, idx)
+            if isinstance(obj, dict):
+                _append(obj)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _append(item)
+            idx = end_idx
+        except json.JSONDecodeError:
+            idx += 1
+
+    return tool_calls
+
+
+def _parse_minimax_tool_call_tag(content: str) -> list[dict]:
+    """Parse MiniMax [TOOL_CALL] tag format.
+
+    MiniMax (cloud) sometimes returns tool calls as:
+        [TOOL_CALL] {tool => "fn_name", args => { --key1 "val1" --key2 "val2" }} [/TOOL_CALL]
+    """
+    tool_calls = []
+    blocks = re.findall(r"\[TOOL_CALL\](.*?)\[/TOOL_CALL\]", content, re.DOTALL)
+    for block in blocks:
+        name_m = re.search(r'tool\s*=>\s*"([^"]+)"', block)
+        if not name_m:
+            continue
+        name = name_m.group(1)
+        params: dict = {}
+        for pm in re.finditer(r'--(\w+)\s+"((?:[^"\\]|\\.)*)"', block, re.DOTALL):
+            key = pm.group(1)
+            raw_val = pm.group(2)
+            try:
+                params[key] = json.loads(f'"{raw_val}"')
+            except json.JSONDecodeError:
+                params[key] = raw_val
+        tool_calls.append({
+            "id": f"call_{uuid.uuid4().hex[:8]}",
+            "name": name,
+            "arguments": params,
+        })
+    return tool_calls
+
+
 def _parse_minimax_tool_calls(content: str) -> list[dict]:
     """Parse MiniMax XML tool-call format from message content.
 
@@ -58,6 +151,20 @@ from coding_agent.tools import get_openai_tools
 
 
 @dataclass
+class StreamToken:
+    """A single streamed token, tagged by type."""
+
+    text: str
+    is_thinking: bool = False
+
+
+def _is_claude_model(model: str) -> bool:
+    """True when the model is a Claude/Anthropic model that supports extended thinking."""
+    m = model.lower()
+    return "claude" in m or "anthropic" in m
+
+
+@dataclass
 class LLMResponse:
     """Assembled response from streaming LLM completion."""
 
@@ -75,7 +182,9 @@ class LLMClient:
         self.temperature = config.temperature
         self.max_output_tokens = config.max_output_tokens
         self.top_p = config.top_p
+        self.thinking_budget_tokens = config.thinking_budget_tokens
         self.last_response = None
+        self.last_llm_response: LLMResponse | None = None
         self._capabilities: ModelCapabilities | None = None
 
     def set_capabilities(self, caps: ModelCapabilities) -> None:
@@ -196,12 +305,14 @@ class LLMClient:
         except Exception as e:
             self._handle_llm_error(e)
 
-    def send_message_stream(self, messages: list[dict], tools: list[dict] | None = None) -> Generator[str, None, LLMResponse]:
-        """Stream a completion response, yielding text deltas.
+    def send_message_stream(self, messages: list[dict], tools: list[dict] | None = None) -> Generator[StreamToken, None, LLMResponse]:
+        """Stream a completion response, yielding StreamToken objects.
 
-        Yields text content as it arrives. After the generator is exhausted,
-        the return value (accessible via StopIteration.value) is an LLMResponse
-        containing the full text and any tool_calls.
+        Yields StreamToken instances tagged as either regular content or thinking
+        (for models that support extended reasoning such as Claude). After the
+        generator is exhausted, the return value (accessible via
+        StopIteration.value) is an LLMResponse containing the full text and any
+        tool_calls.
 
         The full reassembled ModelResponse is also available via self.last_response.
 
@@ -212,6 +323,14 @@ class LLMClient:
         self.last_response = None
         chunks = []
         sampling_params = self._get_sampling_params()
+
+        extra_params: dict = {}
+        if self.thinking_budget_tokens and _is_claude_model(self.model or ""):
+            extra_params["thinking"] = {
+                "type": "enabled",
+                "budget_tokens": self.thinking_budget_tokens,
+            }
+
         try:
             response_stream = litellm.completion(
                 model=self.model,
@@ -223,17 +342,31 @@ class LLMClient:
                 tools=tools,
                 max_tokens=self.max_output_tokens,
                 **sampling_params,
+                **extra_params,
             )
             for chunk in response_stream:
                 chunks.append(chunk)
                 delta = chunk.choices[0].delta
+
+                # Extended thinking blocks (Claude)
+                thinking_blocks = getattr(delta, "thinking_blocks", None)
+                if thinking_blocks:
+                    for block in thinking_blocks:
+                        if isinstance(block, dict):
+                            text = block.get("thinking", "")
+                        else:
+                            text = getattr(block, "thinking", "")
+                        if text:
+                            yield StreamToken(text=text, is_thinking=True)
+
                 if delta.content:
-                    yield delta.content
+                    yield StreamToken(text=delta.content)
             self.last_response = litellm.stream_chunk_builder(chunks)
         except Exception as e:
             self._handle_llm_error(e)
 
         # Build response from assembled result
+        self.last_llm_response = None
         result = LLMResponse()
         if self.last_response:
             message = self.last_response.choices[0].message
@@ -251,8 +384,15 @@ class LLMClient:
                         "name": tc.function.name,
                         "arguments": arguments,
                     })
-            elif _is_minimax_openrouter(self.model or "") and message.content:
-                result.tool_calls.extend(_parse_minimax_tool_calls(message.content))
+            elif _is_minimax(self.model or "") and message.content:
+                # Try parsers in order: [TOOL_CALL] tag, JSON (Ollama), XML (OpenRouter)
+                parsed = _parse_minimax_tool_call_tag(message.content)
+                if not parsed:
+                    parsed = _parse_minimax_json_tool_calls(message.content)
+                if not parsed and _is_minimax_openrouter(self.model or ""):
+                    parsed = _parse_minimax_tool_calls(message.content)
+                result.tool_calls.extend(parsed)
+        self.last_llm_response = result
         return result
 
 

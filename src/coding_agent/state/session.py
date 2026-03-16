@@ -63,6 +63,7 @@ class SessionManager:
             return
         if not self._db.table_exists("sessions"):
             schema.create_tables(self._db)
+        schema.add_messages_json_column(self._db)
         self._maybe_migrate_from_json()
 
     def _maybe_migrate_from_json(self) -> bool:
@@ -234,8 +235,8 @@ class SessionManager:
         with self._db.transaction():
             self._db.execute(
                 """INSERT INTO sessions
-                   (id, title, model, created_at, updated_at, token_count, is_compacted, runtime_config)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, title, model, created_at, updated_at, token_count, is_compacted, runtime_config, messages_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     self._generate_title(first_message),
@@ -245,6 +246,7 @@ class SessionManager:
                     token_count,
                     False,
                     json.dumps({}),
+                    json.dumps(messages),
                 ),
             )
 
@@ -291,17 +293,19 @@ class SessionManager:
 
         token_count = self._estimate_tokens(session.get("messages", []))
         runtime_config_json = json.dumps(session.get("runtime_config", {}))
+        messages_json = json.dumps(session.get("messages", []))
 
         with self._db.transaction():
             self._db.execute(
                 """UPDATE sessions
-                   SET title = ?, updated_at = ?, token_count = ?, runtime_config = ?
+                   SET title = ?, updated_at = ?, token_count = ?, runtime_config = ?, messages_json = ?
                    WHERE id = ?""",
                 (
                     session.get("title", "Untitled"),
                     now,
                     token_count,
                     runtime_config_json,
+                    messages_json,
                     session_id,
                 ),
             )
@@ -360,16 +364,24 @@ class SessionManager:
         query += " ORDER BY id ASC"
         msg_rows = self._db.execute(query, params).fetchall()
 
-        messages = [
-            {
-                "id": r["id"],
-                "role": r["role"],
-                "content": r["content"],
-                "token_count": r["token_count"],
-                "created_at": r["created_at"],
-            }
-            for r in msg_rows
-        ]
+        # Prefer messages_json blob (full history including tool_calls) when available
+        messages_json_raw = row["messages_json"] if "messages_json" in row.keys() else None
+        if messages_json_raw:
+            try:
+                messages = json.loads(messages_json_raw)
+            except (json.JSONDecodeError, ValueError):
+                messages = []
+        else:
+            messages = [
+                {
+                    "id": r["id"],
+                    "role": r["role"],
+                    "content": r["content"],
+                    "token_count": r["token_count"],
+                    "created_at": r["created_at"],
+                }
+                for r in msg_rows
+            ]
 
         sub_agents = self.get_sub_agents(session_id)
 

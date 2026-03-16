@@ -575,4 +575,131 @@ class TestPreprocessSkillContent:
         from coding_agent.ui.slash_commands import _preprocess_skill_content
         content = _preprocess_skill_content("A: !`echo foo`\nB: !`echo bar`")
         assert "foo" in content
-        assert "bar" in content
+
+
+class TestCmdSessions:
+    """Tests for cmd_sessions interactive resume."""
+
+    def test_no_sessions_prints_info(self, mock_conversation, mock_session_manager, mock_renderer):
+        """When no sessions exist, prints info and returns True."""
+        from coding_agent.ui.slash_commands import cmd_sessions
+
+        mock_session_manager.list.return_value = []
+        result = cmd_sessions("", mock_conversation, mock_session_manager, mock_renderer)
+
+        assert result is True
+        mock_renderer.print_info.assert_called_once()
+        assert "No saved sessions" in mock_renderer.print_info.call_args[0][0]
+
+    def test_cancel_does_not_modify_conversation(self, mock_conversation, mock_session_manager, mock_renderer):
+        """When user presses Escape (dialog returns None), conversation is unchanged."""
+        from coding_agent.ui.slash_commands import cmd_sessions
+
+        sessions = [{"id": "abc123", "title": "Test", "updated_at": "2026-01-01", "token_count": 100, "model": "gpt-4o"}]
+        mock_session_manager.list.return_value = sessions
+
+        with patch("coding_agent.ui.slash_commands._pick_session", return_value=None):
+            result = cmd_sessions("", mock_conversation, mock_session_manager, mock_renderer)
+
+        assert result is True
+        mock_conversation.clear.assert_not_called()
+        mock_renderer.print_info.assert_called_once()
+        assert "cancelled" in mock_renderer.print_info.call_args[0][0].lower()
+
+    def test_resume_restores_conversation_and_calls_set_session(self, mock_conversation, mock_session_manager, mock_renderer):
+        """When a session is selected, conversation is cleared and restored, set_session called."""
+        from coding_agent.ui.slash_commands import cmd_sessions
+
+        sessions = [{"id": "abc123", "title": "My Session", "updated_at": "2026-01-01", "token_count": 100, "model": "gpt-4o"}]
+        mock_session_manager.list.return_value = sessions
+
+        loaded_data = {
+            "id": "abc123",
+            "title": "My Session",
+            "messages": [
+                {"role": "user", "content": "Hello"},
+                {"role": "assistant", "content": "Hi there"},
+            ],
+            "runtime_config": {},
+        }
+        mock_session_manager.load.return_value = loaded_data
+
+        mock_agent = MagicMock()
+
+        with patch("coding_agent.ui.slash_commands._pick_session", return_value="abc123"):
+            result = cmd_sessions("", mock_conversation, mock_session_manager, mock_renderer, agent=mock_agent)
+
+        assert result is True
+        mock_conversation.clear.assert_called_once()
+        mock_agent.set_session.assert_called_once_with(mock_session_manager, loaded_data)
+        mock_renderer.print_info.assert_called_once()
+        assert "Resumed" in mock_renderer.print_info.call_args[0][0]
+
+    def test_runtime_config_todos_key_ignored(self, mock_conversation, mock_session_manager, mock_renderer):
+        """runtime_config with extra keys like 'todos' does not raise ValueError."""
+        from coding_agent.ui.slash_commands import cmd_sessions
+
+        sessions = [{"id": "s1", "title": "S", "updated_at": "2026-01-01", "token_count": 0, "model": ""}]
+        mock_session_manager.list.return_value = sessions
+        mock_session_manager.load.return_value = {
+            "id": "s1",
+            "title": "S",
+            "messages": [],
+            "runtime_config": {"model": "gpt-4o", "todos": {"tasks": []}},
+        }
+        mock_agent = MagicMock()
+        mock_llm = MagicMock()
+
+        with patch("coding_agent.ui.slash_commands._pick_session", return_value="s1"):
+            result = cmd_sessions("", mock_conversation, mock_session_manager, mock_renderer, llm_client=mock_llm, agent=mock_agent)
+
+        assert result is True
+        mock_renderer.print_info.assert_called_once()
+
+    def test_session_not_found_prints_error(self, mock_conversation, mock_session_manager, mock_renderer):
+        """When loaded session returns None, prints error."""
+        from coding_agent.ui.slash_commands import cmd_sessions
+
+        sessions = [{"id": "bad_id", "title": "Ghost", "updated_at": "2026-01-01", "token_count": 0, "model": ""}]
+        mock_session_manager.list.return_value = sessions
+        mock_session_manager.load.return_value = None
+
+        with patch("coding_agent.ui.slash_commands._pick_session", return_value="bad_id"):
+            result = cmd_sessions("", mock_conversation, mock_session_manager, mock_renderer)
+
+        assert result is True
+        mock_renderer.print_error.assert_called_once()
+        mock_conversation.clear.assert_not_called()
+
+    def test_restore_session_messages_skips_system(self):
+        """_restore_session_messages skips system messages and returns non-system count."""
+        from unittest.mock import MagicMock
+        from coding_agent.ui.slash_commands import _restore_session_messages
+
+        conv = MagicMock()
+        messages = [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi"},
+        ]
+        count = _restore_session_messages(conv, messages)
+
+        assert count == 2
+        assert conv.add_message.call_count == 2
+
+    def test_restore_session_messages_handles_tool_calls(self):
+        """_restore_session_messages routes tool-call messages correctly."""
+        from unittest.mock import MagicMock
+        from coding_agent.ui.slash_commands import _restore_session_messages
+
+        conv = MagicMock()
+        tool_call = {"id": "call_1", "function": {"name": "read_file", "arguments": "{}"}}
+        messages = [
+            {"role": "assistant", "content": "", "tool_calls": [tool_call]},
+            {"role": "tool", "tool_call_id": "call_1", "content": "file content"},
+        ]
+        count = _restore_session_messages(conv, messages)
+
+        assert count == 2
+        conv.add_assistant_tool_call.assert_called_once_with("", [tool_call])
+        conv.add_tool_result.assert_called_once_with("call_1", "file content")

@@ -88,8 +88,8 @@ def cmd_help(args: str, conversation: ConversationManager, session_manager: Sess
 
     category_order = ["Session", "Config", "Workflow", "Output", "Agent", "Project", "Other"]
 
-    table = Table(title="Available Commands", show_header=True, header_style="bold #818CF8")
-    table.add_column("Command", style="#818CF8", no_wrap=True)
+    table = Table(title="Available Commands", show_header=True, header_style="bold blue")
+    table.add_column("Command", style="blue", no_wrap=True)
     table.add_column("Description")
 
     first_category = True
@@ -159,29 +159,109 @@ def cmd_compact(args: str, conversation: ConversationManager, session_manager: S
     return True
 
 
+def _restore_session_messages(conversation: ConversationManager, messages: list) -> int:
+    """Restore messages into a ConversationManager. Returns count of non-system messages."""
+    for msg in messages:
+        role = msg.get("role")
+        if role == "system":
+            continue
+        elif isinstance(msg.get("tool_calls"), list) and msg["tool_calls"]:
+            conversation.add_assistant_tool_call(msg.get("content", ""), msg["tool_calls"])
+        elif role == "tool":
+            conversation.add_tool_result(msg.get("tool_call_id", ""), msg.get("content", ""))
+        else:
+            conversation.add_message(role, msg.get("content", ""))
+    return len([m for m in messages if m.get("role") != "system"])
+
+
+_RUNTIME_CONFIG_KEYS = {"model", "api_key", "temperature", "top_p", "api_base", "max_output_tokens"}
+
+
+def _pick_session(sessions: list) -> str | None:
+    """Run an interactive session picker. Returns selected session ID or None if cancelled."""
+    from prompt_toolkit import Application
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import Layout
+    from prompt_toolkit.layout.containers import Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+
+    idx = [0]
+
+    def get_fragments():
+        parts: list = [("bold", "  Sessions — ↑↓ navigate, Enter to resume, Esc to cancel\n\n")]
+        for i, s in enumerate(sessions):
+            title = s.get("title", "Untitled")[:42]
+            date = s.get("updated_at", "")[:10]
+            tokens = s.get("token_count", 0)
+            model = s.get("model", "")[:20]
+            line = f"  {title:<43} {date}  {tokens:>7} tok  {model}\n"
+            parts.append(("reverse" if i == idx[0] else "", line))
+        return parts
+
+    kb = KeyBindings()
+
+    @kb.add("up")
+    def _(event):
+        idx[0] = max(0, idx[0] - 1)
+
+    @kb.add("down")
+    def _(event):
+        idx[0] = min(len(sessions) - 1, idx[0] + 1)
+
+    @kb.add("enter")
+    def _(event):
+        event.app.exit(result=sessions[idx[0]]["id"])
+
+    @kb.add("escape")
+    @kb.add("c-c")
+    def _(event):
+        event.app.exit(result=None)
+
+    app = Application(
+        layout=Layout(Window(content=FormattedTextControl(get_fragments, focusable=True))),
+        key_bindings=kb,
+        mouse_support=False,
+        full_screen=False,
+    )
+    return app.run()
+
+
 def cmd_sessions(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
-    """List saved sessions."""
+    """List saved sessions and interactively resume one."""
     sessions = session_manager.list()
 
     if not sessions:
         renderer.print_info("No saved sessions.")
         return True
 
-    table = Table(title="Saved Sessions", show_header=True, header_style="bold #818CF8")
-    table.add_column("#", style="dim", justify="right")
-    table.add_column("Title", style="#818CF8")
-    table.add_column("Date")
-    table.add_column("Tokens", justify="right")
-    table.add_column("Model")
+    selected_id = _pick_session(sessions)
 
-    for i, session in enumerate(sessions, 1):
-        title = session.get("title", "Untitled")
-        date = session.get("updated_at", "Unknown")[:10]
-        token_count = str(session.get("token_count", 0))
-        model = session.get("model", "Unknown")
-        table.add_row(str(i), title, date, token_count, model)
+    if selected_id is None:
+        renderer.print_info("Session resume cancelled.")
+        return True
 
-    renderer.console.print(table)
+    loaded = session_manager.load(selected_id)
+    if not loaded:
+        renderer.print_error(f"Session not found: {selected_id}")
+        return True
+
+    conversation.clear()
+    messages = loaded.get("messages", [])
+    msg_count = _restore_session_messages(conversation, messages)
+
+    if agent is not None:
+        agent.set_session(session_manager, loaded)
+
+        raw_config = loaded.get("runtime_config", {})
+        llm_config = {k: v for k, v in raw_config.items() if k in _RUNTIME_CONFIG_KEYS}
+        if llm_config and llm_client is not None:
+            from coding_agent.ui.cli import _apply_runtime_config
+            set_runtime_config(**llm_config)
+            _apply_runtime_config(llm_client, llm_config)
+
+    renderer.print_info(
+        f"Resumed: \"{loaded.get('title', 'Untitled')}\" — {msg_count} messages restored."
+    )
     return True
 
 
@@ -189,6 +269,62 @@ def cmd_exit(args: str, conversation: ConversationManager, session_manager: Sess
     """Exit the session."""
     renderer.print_info("Goodbye!")
     return False
+
+
+def cmd_history(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Display conversation history."""
+    from rich.markdown import Markdown
+    from rich.panel import Panel
+
+    limit: int | None = None
+    if args.strip():
+        try:
+            limit = int(args.strip())
+        except ValueError:
+            renderer.print_error(f"Invalid argument: {args.strip()!r}. Usage: /history [n]")
+            return True
+
+    messages = [m for m in conversation.get_messages() if m.get("role") != "system"]
+
+    if not messages:
+        renderer.print_info("No conversation history.")
+        return True
+
+    if limit is not None:
+        messages = messages[-limit:]
+
+    _ROLE_STYLE = {
+        "user": ("bold blue", "You", "blue"),
+        "assistant": ("bold green", "Assistant", "green"),
+        "tool": ("dim cyan", "Tool result", "cyan"),
+    }
+
+    for msg in messages:
+        role = msg.get("role", "unknown")
+        style, label, border = _ROLE_STYLE.get(role, ("white", role.capitalize(), "white"))
+
+        if role == "assistant" and isinstance(msg.get("tool_calls"), list) and msg["tool_calls"]:
+            calls = ", ".join(tc.get("function", {}).get("name", "?") for tc in msg["tool_calls"])
+            text = msg.get("content") or ""
+            content: str = (text + "\n\n" if text else "") + f"*[Tool calls: {calls}]*"
+            renderable = Markdown(content)
+        elif role == "tool":
+            raw = msg.get("content", "")
+            snippet = raw[:200] + ("…" if len(raw) > 200 else "")
+            renderable = snippet
+        else:
+            renderable = Markdown(msg.get("content", ""))
+
+        renderer.console.print(Panel(
+            renderable,
+            title=f"[{style}]{label}[/{style}]",
+            title_align="left",
+            border_style=border,
+            padding=(0, 1),
+        ))
+
+    renderer.print_info(f"{len(messages)} message(s) shown.")
+    return True
 
 
 def _render_todo_table(todos, renderer) -> None:
@@ -209,7 +345,7 @@ def _render_todo_table(todos, renderer) -> None:
         TaskStatus.BLOCKED: "bold yellow",
     }
 
-    table = Table(title="Todo List", show_header=True, header_style="bold #818CF8")
+    table = Table(title="Todo List", show_header=True, header_style="bold blue")
     table.add_column("ID", style="dim", no_wrap=True)
     table.add_column("Status", no_wrap=True)
     table.add_column("Description")
@@ -616,7 +752,7 @@ def cmd_config(args: str, conversation: ConversationManager, session_manager: Se
     runtime = get_runtime_config()
     api_key_display = "***" if runtime.get("api_key") or llm_client.api_key else "None"
 
-    table = Table(title="Runtime Configuration", show_header=True, header_style="bold #818CF8", box=None)
+    table = Table(title="Runtime Configuration", show_header=True, header_style="bold blue", box=None)
     table.add_column("Setting", style="dim", no_wrap=True)
     table.add_column("Value")
 
@@ -912,8 +1048,8 @@ def cmd_checkpoint(
         if not checkpoints:
             renderer.print_info("No checkpoints found.")
             return True
-        table = Table(title="Checkpoints", show_header=True, header_style="bold #818CF8")
-        table.add_column("ID", style="#818CF8")
+        table = Table(title="Checkpoints", show_header=True, header_style="bold blue")
+        table.add_column("ID", style="blue")
         table.add_column("Name")
         table.add_column("Created")
         table.add_column("Messages")
@@ -1021,8 +1157,8 @@ def cmd_workflow(
         if not registry:
             renderer.print_info("No workflows available.")
             return True
-        table = Table(title="Available Workflows", show_header=True, header_style="bold #818CF8")
-        table.add_column("Name", style="#818CF8")
+        table = Table(title="Available Workflows", show_header=True, header_style="bold blue")
+        table.add_column("Name", style="blue")
         table.add_column("Description")
         for wf in registry:
             table.add_row(wf.get("name", ""), wf.get("description", ""))
@@ -1126,8 +1262,8 @@ def cmd_agent(args: str, conversation: ConversationManager, session_manager: Ses
         if not sub_agents:
             renderer.print_info("No sub-agents in this session yet.")
             return True
-        table = Table(title="Sub-Agents", show_header=True, header_style="bold #818CF8")
-        table.add_column("Name", style="#818CF8")
+        table = Table(title="Sub-Agents", show_header=True, header_style="bold blue")
+        table.add_column("Name", style="blue")
         table.add_column("Role")
         table.add_column("Created", style="dim")
         for sa in sub_agents:
@@ -1252,6 +1388,7 @@ COMMANDS: dict[str, CommandHandler] = {
     "clear": CommandHandler("clear", cmd_clear, "Clear conversation history", False, CommandPrefix.SLASH, "Session"),
     "compact": CommandHandler("compact", cmd_compact, "Manually trigger conversation truncation", False, CommandPrefix.SLASH, "Session"),
     "sessions": CommandHandler("sessions", cmd_sessions, "List saved sessions", False, CommandPrefix.SLASH, "Session"),
+    "history": CommandHandler("history", cmd_history, "Show conversation history (/history [n])", False, CommandPrefix.SLASH, "Session"),
     "exit": CommandHandler("exit", cmd_exit, "Exit the session", False, CommandPrefix.SLASH, "Session"),
     "model": CommandHandler("model", cmd_model, "Switch to a different model", True, CommandPrefix.SLASH, "Config"),
     "model-info": CommandHandler("model-info", cmd_model_info, "Show current model capabilities", False, CommandPrefix.SLASH, "Config"),

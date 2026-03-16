@@ -8,6 +8,7 @@ import pytest
 import coding_agent.config.config as _config_module
 from coding_agent.config import AgentConfig
 from coding_agent.config.config import ModelCapabilities
+from coding_agent.core.llm import StreamToken
 from coding_agent.core.llm import LLMClient, _is_minimax_openrouter, _parse_minimax_tool_calls
 
 
@@ -520,7 +521,7 @@ class TestSendMessageStreamSuccess:
 
         client = LLMClient(config)
         deltas = list(client.send_message_stream(sample_messages))
-        assert deltas == ["Hello", " world", "!"]
+        assert deltas == [StreamToken("Hello"), StreamToken(" world"), StreamToken("!")]
 
     @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
     @patch("coding_agent.core.llm.litellm.completion")
@@ -532,7 +533,7 @@ class TestSendMessageStreamSuccess:
 
         client = LLMClient(config)
         deltas = list(client.send_message_stream(sample_messages))
-        assert deltas == ["Hello", " world"]
+        assert deltas == [StreamToken("Hello"), StreamToken(" world")]
 
     @patch("coding_agent.core.llm.litellm.stream_chunk_builder")
     @patch("coding_agent.core.llm.litellm.completion")
