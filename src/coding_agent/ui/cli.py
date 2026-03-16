@@ -64,7 +64,6 @@ from coding_agent.ui.slash_commands import SlashCommandCompleter, execute_comman
 from coding_agent.core.system_prompt import SYSTEM_PROMPT
 
 from coding_agent import __version__
-from coding_agent.ui.sidebar import make_toolbar
 from coding_agent.workflow import WorkflowManager, WorkflowState
 
 import re as _re
@@ -458,16 +457,6 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         click.echo(str(e), err=True)
         sys.exit(1)
 
-    renderer.render_config({
-        "Model": config.model,
-        "API": config.api_base,
-        **({"Proxy": config.https_proxy} if config.https_proxy else {}),
-        "Temp": str(config.temperature),
-        "MaxTok": str(config.max_output_tokens),
-        "TopP": str(config.top_p),
-    })
-    renderer.console.print()
-
     try:
         llm_client = LLMClient(config)
         llm_client.verify_connection()
@@ -475,8 +464,14 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         click.echo(str(e), err=True)
         sys.exit(1)
 
-    backend = "Ollama" if is_ollama_model(config.model) else "LiteLLM"
-    renderer.print_info(f"Connected to {backend}")
+    short_model = config.model.split("/")[-1] if "/" in config.model else config.model
+    try:
+        from urllib.parse import urlparse
+        _p = urlparse(config.api_base or "")
+        short_api = _p.netloc or config.api_base or ""
+    except Exception:
+        short_api = config.api_base or ""
+    renderer.print_info(f"◉ {short_model}  •  {short_api}")
 
     # Load project instructions lazily
     enhanced_prompt, loaded_files = _get_system_prompt()
@@ -523,9 +518,9 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
                     + lines
                 )
         else:
-            renderer.print_info("No skills enabled in config. Skipping skill loading.")
+            pass
     else:
-        renderer.print_info("No skills found.")
+        pass
 
     # Handle session resume
     if resume:
@@ -600,7 +595,6 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
     checkpoint_manager = CheckpointManager()
     set_checkpoint_manager(checkpoint_manager)
 
-    renderer.print_info("Type 'exit' to quit.\n")
 
     import subprocess
     branch_name = "N/A"
@@ -618,17 +612,6 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
 
     # Slash command autocomplete
     slash_completer = SlashCommandCompleter()
-
-    from coding_agent.tools.spawn_sub_agent import get_active_sub_agent_name, is_team_mode
-    toolbar_func = make_toolbar(
-        conversation=conversation,
-        workflow=current_workflow,
-        branch=branch_name,
-        context_limit=128000,
-        get_active_sub_agent=get_active_sub_agent_name,
-        get_model=lambda: llm_client.model if llm_client else None,
-        get_team_mode=is_team_mode,
-    )
 
     from coding_agent.ui.interrupt import get_interrupt_handler, trigger_interrupt
     interrupt_handler = get_interrupt_handler()
@@ -695,7 +678,6 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
         )
         input_func = lambda: session.prompt(
             STYLED_PROMPT,
-            bottom_toolbar=toolbar_func,
             placeholder=HTML('<ansigray>Ask anything, or /help for commands</ansigray>'),
         )
     except Exception as _pt_err:
@@ -741,9 +723,7 @@ def run(ctx, model: str | None, api_base: str | None, temperature: float | None,
 
         # Delegate to Agent for ReAct loop
         try:
-            from coding_agent.ui.persistent_bar import PersistentStatusBar
-            with PersistentStatusBar(toolbar_func):
-                response = agent.run(text)
+            response = agent.run(text)
             # Handle skill suggestion embedded in response
             if response and filtered_skills:
                 _handle_skill_suggestion(response, filtered_skills, conversation,

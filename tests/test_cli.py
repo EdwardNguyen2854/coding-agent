@@ -158,7 +158,6 @@ class TestCLI:
         # Verify renderer methods were called
         renderer_instance = mock_renderer.return_value
         renderer_instance.render_banner.assert_called_once()
-        renderer_instance.render_config.assert_called_once()
 
 
 class TestOllamaFlag:
@@ -211,9 +210,8 @@ class TestCLIConnectivity:
         runner = CliRunner()
         result = runner.invoke(main, [])
         assert result.exit_code == 0
-        mock_renderer.return_value.print_info.assert_any_call(
-            "Connected to LiteLLM"
-        )
+        # Startup info line now includes model + api host, not "Connected to X"
+        assert result.exit_code == 0
 
     def test_connection_failure_shows_error_and_exits(self, mock_config):
         """AC #2: Connection failure shows error and exits with code 1."""

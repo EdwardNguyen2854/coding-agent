@@ -164,8 +164,8 @@ class TestRenderBanner:
 
         renderer.render_banner("1.0.0")
 
-        # Banner prints the panel + a hint line
-        assert mock_console.print.call_count == 2
+        # Banner prints only the panel (hint line removed)
+        assert mock_console.print.call_count == 1
         first_call_arg = mock_console.print.call_args_list[0].args[0]
         # First call should be the Panel
         assert hasattr(first_call_arg, 'renderable') or hasattr(first_call_arg, 'title')

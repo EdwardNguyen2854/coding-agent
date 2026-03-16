@@ -1383,12 +1383,48 @@ def cmd_output(args: str, conversation: ConversationManager, session_manager: Se
     return True
 
 
+_DEFAULT_CONTEXT_LIMIT = 128000
+
+
+def cmd_context(args: str, conversation: ConversationManager, session_manager: SessionManager, renderer: Renderer, llm_client: LLMClient | None = None, agent: "Agent | None" = None) -> bool:
+    """Show context window usage."""
+    from rich.text import Text
+    from rich.table import Table
+
+    token_count = conversation.token_count
+    try:
+        limit = load_config().max_context_tokens
+    except Exception:
+        limit = _DEFAULT_CONTEXT_LIMIT
+    pct = (token_count / limit * 100) if limit else 0
+
+    if pct >= 90:
+        pct_style = "bold red"
+    elif pct >= 70:
+        pct_style = "yellow"
+    else:
+        pct_style = "green"
+
+    bar_width = 30
+    filled = min(bar_width, round(pct / 100 * bar_width))
+    bar = "█" * filled + "░" * (bar_width - filled)
+
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_column(style="dim", no_wrap=True)
+    table.add_column()
+    table.add_row("tokens used", Text(f"{token_count:,} / {limit:,}", style=pct_style))
+    table.add_row("usage", Text(f"{bar}  {pct:.1f}%", style=pct_style))
+    renderer.console.print(table)
+    return True
+
+
 COMMANDS: dict[str, CommandHandler] = {
     "help": CommandHandler("help", cmd_help, "Show this help message", False, CommandPrefix.SLASH, "Session"),
     "clear": CommandHandler("clear", cmd_clear, "Clear conversation history", False, CommandPrefix.SLASH, "Session"),
     "compact": CommandHandler("compact", cmd_compact, "Manually trigger conversation truncation", False, CommandPrefix.SLASH, "Session"),
     "sessions": CommandHandler("sessions", cmd_sessions, "List saved sessions", False, CommandPrefix.SLASH, "Session"),
     "history": CommandHandler("history", cmd_history, "Show conversation history (/history [n])", False, CommandPrefix.SLASH, "Session"),
+    "context": CommandHandler("context", cmd_context, "Show context window usage", False, CommandPrefix.SLASH, "Session"),
     "exit": CommandHandler("exit", cmd_exit, "Exit the session", False, CommandPrefix.SLASH, "Session"),
     "model": CommandHandler("model", cmd_model, "Switch to a different model", True, CommandPrefix.SLASH, "Config"),
     "model-info": CommandHandler("model-info", cmd_model_info, "Show current model capabilities", False, CommandPrefix.SLASH, "Config"),

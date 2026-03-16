@@ -12,6 +12,22 @@ import threading
 from typing import Callable
 
 # ---------------------------------------------------------------------------
+# Global suppress flag — lets streaming displays pause bar drawing to avoid
+# cursor-position conflicts with Rich Live / Status contexts.
+# ---------------------------------------------------------------------------
+_SUPPRESS = threading.Event()
+
+
+def suppress_bar() -> None:
+    """Pause persistent bar drawing (call before starting a Rich Live context)."""
+    _SUPPRESS.set()
+
+
+def unsuppress_bar() -> None:
+    """Resume persistent bar drawing (call after a Rich Live context exits)."""
+    _SUPPRESS.clear()
+
+# ---------------------------------------------------------------------------
 # Prompt-toolkit style → ANSI escape code mapping
 # ---------------------------------------------------------------------------
 
@@ -240,7 +256,8 @@ class PersistentStatusBar:
     def _run(self) -> None:
         interval = 1.0 / self._REFRESH_HZ
         while not self._stop.wait(interval):
-            self._draw()
+            if not _SUPPRESS.is_set():
+                self._draw()
 
     # ------------------------------------------------------------------
     # Public API
