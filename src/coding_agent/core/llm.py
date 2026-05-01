@@ -399,7 +399,8 @@ class LLMClient:
 def detect_model_capabilities(client: "LLMClient") -> ModelCapabilities:
     """Detect if a model supports temperature and top_p parameters.
 
-    Makes a minimal request with temperature=0.5, top_p=0.9 to test support.
+    Tests each parameter independently to avoid triggering BadRequestError
+    from models that reject certain parameter combinations.
 
     Args:
         client: LLMClient instance to test
@@ -413,6 +414,9 @@ def detect_model_capabilities(client: "LLMClient") -> ModelCapabilities:
     if cached:
         return cached
 
+    temp_supported = False
+    top_p_supported = False
+
     try:
         litellm.completion(
             model=model,
@@ -421,15 +425,30 @@ def detect_model_capabilities(client: "LLMClient") -> ModelCapabilities:
             api_key=client.api_key,
             max_tokens=1,
             temperature=0.5,
+            timeout=10,
+        )
+        temp_supported = True
+    except litellm.BadRequestError:
+        pass
+    except Exception as e:
+        _log.debug("Unexpected error detecting temperature support for %r: %s", model, e)
+
+    try:
+        litellm.completion(
+            model=model,
+            messages=[{"role": "user", "content": "ping"}],
+            api_base=client.api_base,
+            api_key=client.api_key,
+            max_tokens=1,
             top_p=0.9,
             timeout=10,
         )
-        caps = ModelCapabilities(temperature_supported=True, top_p_supported=True)
+        top_p_supported = True
     except litellm.BadRequestError:
-        caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
+        pass
     except Exception as e:
-        _log.debug("Unexpected error detecting model capabilities for %r, assuming unsupported: %s", model, e)
-        caps = ModelCapabilities(temperature_supported=False, top_p_supported=False)
+        _log.debug("Unexpected error detecting top_p support for %r: %s", model, e)
 
+    caps = ModelCapabilities(temperature_supported=temp_supported, top_p_supported=top_p_supported)
     set_model_capabilities(model, caps)
     return caps
