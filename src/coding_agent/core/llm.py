@@ -158,6 +158,16 @@ class StreamToken:
     is_thinking: bool = False
 
 
+def _ollama_supports_function_calling(model: str) -> bool:
+    """Check if an Ollama model supports function calling via litellm."""
+    if not is_ollama_model(model):
+        return True
+    try:
+        return litellm.supports_function_calling(model)
+    except Exception:
+        return False
+
+
 def _is_claude_model(model: str) -> bool:
     """True when the model is a Claude/Anthropic model that supports extended thinking."""
     m = model.lower()
@@ -331,6 +341,8 @@ class LLMClient:
                 "budget_tokens": self.thinking_budget_tokens,
             }
 
+        send_tools = tools if _ollama_supports_function_calling(self.model or "") else None
+
         try:
             response_stream = litellm.completion(
                 model=self.model,
@@ -339,7 +351,7 @@ class LLMClient:
                 api_key=self.api_key,
                 stream=True,
                 timeout=300,
-                tools=tools,
+                tools=send_tools,
                 max_tokens=self.max_output_tokens,
                 **sampling_params,
                 **extra_params,
