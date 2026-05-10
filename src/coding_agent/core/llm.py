@@ -162,10 +162,7 @@ def _ollama_supports_function_calling(model: str) -> bool:
     """Check if an Ollama model supports function calling via litellm."""
     if not is_ollama_model(model):
         return True
-    try:
-        return litellm.supports_function_calling(model)
-    except Exception:
-        return False
+    return True
 
 
 def _is_claude_model(model: str) -> bool:
