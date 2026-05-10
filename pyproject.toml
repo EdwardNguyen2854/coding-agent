@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coding-agent"
-version = "0.12.4"
+version = "0.12.5"
 description = "Self-hosted, model-agnostic AI coding agent"
 requires-python = ">=3.10"
 dependencies = [
@@ -28,3 +28,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["docs/**/*", "workflows/**/*.yaml"]
+"coding_agent" = ["docs/**/*.md"]

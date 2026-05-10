@@ -128,20 +128,36 @@ def get_enhanced_system_prompt(default_prompt: str) -> tuple[str, list[str]]:
 def load_agent_docs() -> str | None:
     """Load all .md files from .coding-agent/docs/agent into system prompt.
     
+    Falls back to the package-bundled TOOLS.md if the workspace has no agent docs.
+    
     Returns:
-        Combined content of all agent docs or None if directory doesn't exist.
+        Combined content of all agent docs or None if directory doesn't exist
+        and no bundled docs are available.
     """
     agent_docs_dir = get_agent_docs_dir()
-    if not agent_docs_dir.is_dir():
+    bundled_tools_md = Path(__file__).parent.parent / "docs" / "agent" / "TOOLS.md"
+    
+    if not agent_docs_dir.is_dir() and not bundled_tools_md.is_file():
         return None
     
     docs: list[str] = []
-    for md_file in sorted(agent_docs_dir.glob("*.md")):
+    
+    if agent_docs_dir.is_dir():
+        for md_file in sorted(agent_docs_dir.glob("*.md")):
+            try:
+                content = md_file.read_text(encoding="utf-8")
+                docs.append(f"\n\n## {md_file.stem}\n\n{content}")
+            except OSError:
+                continue
+    
+    if bundled_tools_md.is_file() and not any(
+        f.stem == "TOOLS" for f in agent_docs_dir.glob("TOOLS.md") if agent_docs_dir.is_dir()
+    ):
         try:
-            content = md_file.read_text(encoding="utf-8")
-            docs.append(f"\n\n## {md_file.stem}\n\n{content}")
+            content = bundled_tools_md.read_text(encoding="utf-8")
+            docs.append(f"\n\n## TOOLS\n\n{content}")
         except OSError:
-            continue
+            pass
     
     if not docs:
         return None
