@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(pip index:*)",
+      "Bash(where coding-agent:*)",
+      "Bash(pip show:*)",
+      "Bash(coding-agent:*)",
+      "Bash(gh issue:*)",
+      "Bash(which gh:*)",
+      "Bash(winget install:*)",
+      "Bash(export:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

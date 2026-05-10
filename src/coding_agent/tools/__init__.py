@@ -156,8 +156,15 @@ def execute_tool(name: str, args: dict[str, Any]) -> Any:
     """Dispatch a tool call by name. Call get_openai_tools() first."""
     from coding_agent.core.tool_result import ToolResult
     if name not in tool_registry:
+        name = _TOOL_NAME_ALIASES.get(name, name)
+    if name not in tool_registry:
         return ToolResult.failure(
             "TOOL_NOT_FOUND",
             f"Tool '{name}' is not registered. Call get_openai_tools() first.",
         )
     return tool_registry[name].handler(args)
+
+
+_TOOL_NAME_ALIASES: dict[str, str] = {
+    "read_file": "file_read",
+}

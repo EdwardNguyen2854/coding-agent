@@ -40,7 +40,7 @@ def _parse_minimax_json_tool_calls(content: str) -> list[dict]:
         if isinstance(item, dict) and "name" in item:
             tool_calls.append({
                 "id": f"call_{uuid.uuid4().hex[:8]}",
-                "name": item["name"],
+                "name": _TOOL_NAME_ALIASES.get(item["name"], item["name"]),
                 "arguments": item.get("arguments", {}),
             })
 
@@ -105,7 +105,7 @@ def _parse_minimax_tool_call_tag(content: str) -> list[dict]:
                 params[key] = raw_val
         tool_calls.append({
             "id": f"call_{uuid.uuid4().hex[:8]}",
-            "name": name,
+            "name": _TOOL_NAME_ALIASES.get(name, name),
             "arguments": params,
         })
     return tool_calls
@@ -137,10 +137,15 @@ def _parse_minimax_tool_calls(content: str) -> list[dict]:
                 params[pm.group(1)] = val
         tool_calls.append({
             "id": f"call_{uuid.uuid4().hex[:8]}",
-            "name": name,
+            "name": _TOOL_NAME_ALIASES.get(name, name),
             "arguments": params,
         })
     return tool_calls
+
+
+_TOOL_NAME_ALIASES: dict[str, str] = {
+    "read_file": "file_read",
+}
 
 
 class ModelRejectionError(ConnectionError):
